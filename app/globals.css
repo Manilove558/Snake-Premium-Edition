@@ -204,3 +204,5 @@ body {
   to   { opacity: 1; transform: none; }
 }
 .panel-layer { animation: panel-in 0.18s ease-out; }
+/* The frame is the containing block for nested sheets/toasts (position: fixed), so they never cover the side panels */
+.panel-layer { contain: layout paint; }

@@ -21,6 +21,7 @@ import { useStore, claimRankRewards } from "@/lib/store"
 import { openPlayerProfile } from "@/lib/friends"
 import { PlayerAvatar } from "./player-avatar"
 import { VipCrown } from "./vip-crown"
+import { usePanelTarget } from "./panel-host"
 
 // ---------------------------------------------------------------------------
 // Small shared pieces (also used by the battle results screen)
@@ -105,6 +106,7 @@ export function RankDetailsSheet({
     setTimeout(() => setMsg(""), 2200)
   }
 
+  const panelTarget = usePanelTarget()
   const box = "rounded-2xl border border-black/5 dark:border-white/10 bg-white/70 dark:bg-white/5"
   return createPortal(
     <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
@@ -226,7 +228,7 @@ export function RankDetailsSheet({
         {msg && <div className="mt-2 text-center text-sm font-semibold text-emerald-500">{msg}</div>}
       </div>
     </div>,
-    document.body,
+    panelTarget,
   )
 }
 

@@ -66,3 +66,9 @@
 - Start (host only), Leave Room and Multiplayer all live in the bottom-right action bar.
 - Overlay padding p-2 -> p-3; the card stays vertically centred (m-auto), no empty space at the bottom.
 - File: components/multiplayer-lobby.tsx
+
+## v18.11 — Everything stays inside the central frame
+- Audit: Store, Vault, Settings, Rank, Map, Profile, Friends, Mailbox, Admin and Multiplayer already render inside the central frame via the single `activeView` state (panel-host.tsx); left strip + right dashboard stay live.
+- Fixed leftovers that still covered the whole screen: Store's "Get Gems/Coins" + buy-confirm sheets, Admin sheets, toasts, and the Rank details sheet (was portalled to document.body). `.panel-layer` now has `contain: layout paint`, so nested `fixed` sheets/toasts are clipped to the frame; Rank details portals into the frame; Admin sheet `dvh` -> `%`.
+- Top icon row (right panel): Profile, Friends, Mailbox, Store, Settings ⚙️, Admin 🛡️, Vault, + a red Close ✕ at the end that appears only while a panel is open and returns to the game view (same as the ✕ inside the frame).
+- Files: app/globals.css, components/ranked-panel.tsx, components/admin-panel.tsx, components/snake-game.tsx

@@ -2109,6 +2109,17 @@ export default function SnakeGame() {
             </button>
             <AdminButton />
             <SnakeVault />
+            {/* Close (x): only while a panel is open in the central frame -> back to the game view */}
+            {shownView !== "GAME" && shownView !== "MULTIPLAYER" && (
+              <button
+                aria-label="Close panel"
+                title="Close"
+                onClick={closeFrame}
+                className="d-pad-btn animate-fade-in inline-flex items-center justify-center h-12 w-12 rounded-full text-red-500 active:scale-90 transition-transform"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-1.5">
