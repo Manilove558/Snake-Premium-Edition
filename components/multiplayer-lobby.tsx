@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Users, Copy, Check, LogOut, WifiOff, X, Play, Globe, Plus, Loader2, Settings } from "lucide-react"
+import { Users, Copy, Check, LogOut, WifiOff, X, Play, Globe, Plus, Loader2, Settings, UserPlus } from "lucide-react"
 import {
   createRoom,
   joinRoom,
@@ -26,8 +26,9 @@ import {
 import { BATTLE_MAPS, getBattleMap, type BattleMap } from "@/lib/battle-maps"
 import { useAuthUser } from "@/lib/auth"
 import { useDisplayName } from "@/lib/profile-name"
-import { isVip } from "@/lib/store"
-import { openPlayerProfile } from "@/lib/friends"
+import { isVip, useStore } from "@/lib/store"
+import { openPlayerProfile, useFriends, usePublicProfiles } from "@/lib/friends"
+import { INVITE_TTL_MS, sendRoomInvite, usePresence } from "@/lib/invites"
 import { FriendAction } from "./snake-friends"
 import VoiceChat from "./voice-chat"
 import { destroyVoiceManager } from "@/lib/voice-chat"
@@ -220,6 +221,7 @@ export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, init
   const [showSettings, setShowSettings] = useState(false)
   const [tab, setTab] = useState<"casual" | "ranked">("casual")
   const { user: authUser } = useAuthUser()
+  const st = useStore()
   const myUid = authUser?.uid ?? null
   // Signed-in players always use their Profile name; guests type one
   const profileName = useDisplayName(authUser)
@@ -227,6 +229,36 @@ export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, init
   const playerName = (signedIn ? profileName : name).trim().slice(0, 16)
   const [error, setError] = useState("")
   const [copied, setCopied] = useState(false)
+  // Room invites (host only): friends list with online/offline status
+  const { friends } = useFriends()
+  const friendUids = Object.keys(friends)
+  const friendProfiles = usePublicProfiles(friendUids)
+  const friendPresence = usePresence(friendUids)
+  const [invitedAt, setInvitedAt] = useState<Record<string, number>>({})
+  const [inviteBusy, setInviteBusy] = useState<string | null>(null)
+  const [showInviteModal, setShowInviteModal] = useState(false)
+
+  const handleInviteFriend = async (fid: string) => {
+    if (!isHost || !myUid || !code || inviteBusy) return
+    setInviteBusy(fid)
+    try {
+      await sendRoomInvite({
+        fromUid: myUid,
+        fromName: playerName || "Player",
+        fromPhoto: authUser?.photoURL ?? null,
+        avatarId: st.equipped.avatar ?? null,
+        fromVip: isVip(st),
+        hostPlayerId: playerId,
+        toUid: fid,
+        roomCode: code,
+      })
+      setInvitedAt((m) => ({ ...m, [fid]: Date.now() }))
+    } catch {
+      setError("Could not send the invite. Check your connection.")
+    } finally {
+      setInviteBusy(null)
+    }
+  }
   const [online, setOnline] = useState(true)
   const leavingRef = useRef(false)
   const battleStartedRef = useRef(false)
@@ -346,6 +378,7 @@ export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, init
     setPlayerId("")
     setRoom(null)
     setJoinCode("")
+    setShowInviteModal(false)
     leavingRef.current = false
     battleStartedRef.current = false
     autoStartingRef.current = false
@@ -524,6 +557,92 @@ export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, init
         onClose={() => setShowSettings(false)}
       />
     )}
+    {showInviteModal && isHost && screen === "lobby" && (() => {
+      const roomUids = new Set(players.map((p) => p.uid).filter(Boolean) as string[])
+      const list = friendUids.filter((fid) => !roomUids.has(fid))
+      return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div
+            className={`w-full max-w-sm rounded-3xl border p-6 shadow-2xl ${
+              darkMode ? "bg-[#0d1f16] border-white/10 text-white" : "bg-white border-black/10 text-[#123321]"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-emerald-500" />
+                <h2 className="text-lg font-bold">Invite Friends</h2>
+              </div>
+              <button
+                onClick={() => setShowInviteModal(false)}
+                aria-label="Close"
+                className={`p-2 rounded-full ${darkMode ? "hover:bg-white/10" : "hover:bg-black/5"}`}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {list.length === 0 ? (
+              <p className={`text-sm text-center py-4 ${darkMode ? "text-white/60" : "text-black/60"}`}>
+                All your friends are already in this room 🎉
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
+                {list.map((fid) => {
+                  const prof = friendProfiles[fid]
+                  const online = !!friendPresence[fid]?.online
+                  const justInvited = invitedAt[fid] && Date.now() - invitedAt[fid] < INVITE_TTL_MS
+                  const fname = prof?.name || "Player"
+                  return (
+                    <div
+                      key={fid}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-xl ${
+                        darkMode ? "bg-white/5" : "bg-black/5"
+                      }`}
+                    >
+                      <span className="relative shrink-0">
+                        {prof?.photo ? (
+                          <img src={prof.photo} alt={fname} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold bg-emerald-500/20 text-emerald-500">
+                            {fname.slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                        <span
+                          className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 ${
+                            darkMode ? "border-[#0d1f16]" : "border-white"
+                          } ${online ? "bg-emerald-500" : "bg-gray-400"}`}
+                          title={online ? "Online" : "Offline"}
+                        />
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-medium truncate">{fname}</span>
+                        <span className={`block text-[11px] ${online ? "text-emerald-500" : darkMode ? "text-white/40" : "text-black/40"}`}>
+                          {online ? "● Online" : "○ Offline"}
+                        </span>
+                      </span>
+                      <button
+                        onClick={() => handleInviteFriend(fid)}
+                        disabled={!online || !!justInvited || inviteBusy === fid}
+                        className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-gradient-to-r from-emerald-500 to-emerald-400 shadow disabled:opacity-40"
+                      >
+                        {inviteBusy === fid ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <UserPlus className="w-3.5 h-3.5" />
+                        )}
+                        {justInvited ? "Invited ✓" : "Invite"}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <p className={`mt-3 text-[11px] text-center ${darkMode ? "text-white/40" : "text-black/40"}`}>
+              Only online friends can be invited · invite expires in 5 min
+            </p>
+          </div>
+        </div>
+      )
+    })()}
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <div
         className={`w-full max-w-sm rounded-3xl border p-6 shadow-2xl ${
@@ -703,8 +822,18 @@ export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, init
 
             {/* Players */}
             <div>
-              <div className={`text-xs font-semibold mb-2 ${darkMode ? "text-white/70" : "text-black/70"}`}>
-                PLAYERS ({players.length}/{MAX_MP_PLAYERS})
+              <div className="flex items-center justify-between mb-2">
+                <div className={`text-xs font-semibold ${darkMode ? "text-white/70" : "text-black/70"}`}>
+                  PLAYERS ({players.length}/{MAX_MP_PLAYERS})
+                </div>
+                {isHost && myUid && friendUids.length > 0 && (
+                  <button
+                    onClick={() => setShowInviteModal(true)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-gradient-to-r from-emerald-500 to-emerald-400 shadow"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" /> Invite
+                  </button>
+                )}
               </div>
               <div className="flex flex-col gap-2 max-h-44 overflow-y-auto">
                 {players.map((p) => (

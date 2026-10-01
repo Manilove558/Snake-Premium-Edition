@@ -31,6 +31,11 @@ import { useStore, equippedItem, loadCatalog, earnCoins, earnGems, setBest } fro
 import { shapePath } from "@/lib/shapes"
 import MultiplayerBattle from "./multiplayer-battle"
 import { HomeLeaderboard } from "./home-leaderboard"
+import InvitePopup from "./invite-popup"
+import { joinRoom, leaveRoom } from "@/lib/multiplayer"
+import { useDisplayName } from "@/lib/profile-name"
+import { isVip } from "@/lib/store"
+import { removeRoomInvite, type RoomInvite } from "@/lib/invites"
 
 // Game constants
 const CELL_SIZE = 15
@@ -523,6 +528,39 @@ export default function SnakeGame() {
   // Multiplayer views: lobby -> battle. Single-player modes are untouched.
   const [mpView, setMpView] = useState<"none" | "lobby" | "battle">("none")
   const [mpSession, setMpSession] = useState<{ code: string; playerId: string } | null>(null)
+  const profileName = useDisplayName(user)
+
+  // Accept a room invite: leave any current room, join the invited room's lobby.
+  const handleInviteAccept = async (inv: RoomInvite): Promise<string | null> => {
+    const myUid = user?.uid
+    if (!myUid) return "Sign in with Google first."
+    try {
+      if (mpView !== "none" && mpSession) {
+        try {
+          await leaveRoom(mpSession.code, mpSession.playerId)
+        } catch {}
+        setMpSession(null)
+        setMpView("none")
+      }
+      const res = await joinRoom(inv.roomCode, profileName, myUid, isVip())
+      if ("error" in res) {
+        const msgs: Record<string, string> = {
+          ROOM_NOT_FOUND: "Room not found — it may have closed.",
+          GAME_IN_PROGRESS: "Battle already started — ask the host to invite you to the next one.",
+          ROOM_FULL: "Room is full.",
+          NOT_RANKED: "That room is not a ranked room.",
+          SIGN_IN_REQUIRED: "Sign in with Google to join.",
+        }
+        return msgs[res.error] ?? "Could not join the room."
+      }
+      await removeRoomInvite(myUid, inv.roomCode)
+      setMpSession({ code: inv.roomCode, playerId: res.playerId })
+      setMpView("lobby")
+      return null
+    } catch (e) {
+      return e instanceof Error ? e.message : "Could not join the room."
+    }
+  }
   const graceActiveRef = useRef(false)
   const graceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   // Add a new state variable for haptic feedback after the existing state declarations
@@ -2300,6 +2338,8 @@ export default function SnakeGame() {
           onBackToLobby={() => setMpView("lobby")}
         />
       )}
+      {/* Room-invite notifications (signed-in players only) */}
+      {user && <InvitePopup darkMode={darkMode} onAccept={handleInviteAccept} />}
     </Card>
   )
 }

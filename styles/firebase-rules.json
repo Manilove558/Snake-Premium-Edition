@@ -23,14 +23,29 @@
       }
     },
 
+    // One device at a time per account: sessions/{uid} = { id: <device id>, at }.
+    // The last device to log in owns it; other devices see the change and log themselves out.
+    "sessions": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['id', 'at'])",
+        "id": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 64" },
+        "at": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+
     // ---------------- Ranked (Elo) ----------------
     // ranked/{uid} = { elo, wins, losses, matches, updatedAt }.
-    // Any signed-in user can read (leaderboard); only the owner can write their own record.
+    // Public read: the home-screen ranked leaderboard must also work for GUESTS
+    // (no Firebase auth). Elo data is leaderboard data — public by design.
+    // Only the owner can write their own record (auth-gated below).
     // ".read" sits on "ranked" itself because the leaderboard query (orderByChild('elo')) reads that node.
     // NOTE: Elo is computed on the client, so a skilled user can still edit their own record.
     // Real anti-cheat needs Cloud Functions (accepted for now).
     "ranked": {
-      ".read": "auth != null",
+      ".read": true,
       ".indexOn": ["elo"],
       "$uid": {
         ".write": "auth != null && auth.uid === $uid",
@@ -54,10 +69,15 @@
       }
     },
     // Public profile other players can see (name, photo, best score...). Private data stays in users/.
+    // Admins can also list them (admin panel → Mail → player search by name / Player ID).
+    // The display NAME is public so the guest-mode ranked leaderboard can resolve names.
     "publicProfiles": {
+      ".read": "auth != null && (root.child('playerIds').child('IOXN75FA').val() === auth.uid || root.child('admins').child(auth.uid).exists())",
+      ".indexOn": ["name"],
       "$uid": {
         ".read": "auth != null",
-        ".write": "auth != null && auth.uid === $uid"
+        ".write": "auth != null && auth.uid === $uid",
+        "name": { ".read": true }
       }
     },
     // My friends list. I write my own list; I can also add/remove myself on someone else's list,
@@ -102,7 +122,7 @@
         ".validate": "newData.val() === true"
       }
     },
-    // Admin-managed store catalog: overrides + custom items for skins/trails/avatars/VIP.
+    // Admin-managed store catalog: overrides + custom items + categories for skins/trails/avatars/food/VIP.
     // Everyone reads it (the shop needs it); only admins write it.
     "storeConfig": {
       ".read": true,
@@ -134,7 +154,7 @@
           "gems": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000" },
           "vipDays": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 365 && newData.val() % 1 === 0" },
           "items": {
-            ".validate": "newData.hasChildren() && newData.numChildren() <= 12",
+            ".validate": "newData.hasChildren()",
             "$itemId": { ".validate": "newData.val() === true && $itemId.matches(/^[a-z0-9_]{1,48}$/)" }
           },
           "at": { ".validate": "newData.isNumber()" },
@@ -155,7 +175,7 @@
           "gems": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000" },
           "vipDays": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 365 && newData.val() % 1 === 0" },
           "items": {
-            ".validate": "newData.hasChildren() && newData.numChildren() <= 12",
+            ".validate": "newData.hasChildren()",
             "$itemId": { ".validate": "newData.val() === true && $itemId.matches(/^[a-z0-9_]{1,48}$/)" }
           },
           "at": { ".validate": "newData.isNumber()" },
@@ -163,7 +183,6 @@
         }
       }
     }
-  }
 ,
     // ---------------- Play Billing receipts (audit) ----------------
     // purchases/{uid}/{orderId}: written by the player's own app right after a
@@ -182,5 +201,29 @@
           "$other": { ".validate": false }
         }
       }
+    },
+    // ---------------- Room invites + presence ----------------
+    // invites/{toUid}/{roomCode}: a room HOST invites a friend. Only the host's
+    // own player entry may create it — verified against rooms/{code} (hostId must
+    // match, and that player entry's uid must be the sender). The invited player
+    // reads it and deletes it on accept / decline. One invite per (player, room);
+    // re-inviting refreshes it. The app also prunes invites older than 5 seconds.
+    "invites": {
+      "$to": {
+        ".read": "auth != null && auth.uid === $to",
+        "$roomCode": {
+          ".write": "auth != null && ((!newData.exists() && auth.uid === $to) || (newData.exists() && newData.child('fromUid').val() === auth.uid && root.child('rooms').child($roomCode).child('hostId').val() === newData.child('hostPlayerId').val() && root.child('rooms').child($roomCode).child('players').child(newData.child('hostPlayerId').val()).child('uid').val() === auth.uid))",
+          ".validate": "!newData.exists() || (newData.hasChildren(['roomCode', 'fromUid', 'fromName', 'hostPlayerId', 'at']) && newData.child('roomCode').val() === $roomCode && newData.child('at').val() > 0)"
+        }
+      }
+    },
+    // presence/{uid} = { online, lastSeen }. Any signed-in player can read it
+    // (drives the friends list online dots); only the owner writes it.
+    "presence": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
     }
+  }
 }

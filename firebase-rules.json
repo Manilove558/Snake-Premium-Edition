@@ -201,6 +201,29 @@
           "$other": { ".validate": false }
         }
       }
+    },
+    // ---------------- Room invites + presence ----------------
+    // invites/{toUid}/{roomCode}: a room HOST invites a friend. Only the host's
+    // own player entry may create it — verified against rooms/{code} (hostId must
+    // match, and that player entry's uid must be the sender). The invited player
+    // reads it and deletes it on accept / decline. One invite per (player, room);
+    // re-inviting refreshes it. The app also prunes invites older than 5 seconds.
+    "invites": {
+      "$to": {
+        ".read": "auth != null && auth.uid === $to",
+        "$roomCode": {
+          ".write": "auth != null && ((!newData.exists() && auth.uid === $to) || (newData.exists() && newData.child('fromUid').val() === auth.uid && root.child('rooms').child($roomCode).child('hostId').val() === newData.child('hostPlayerId').val() && root.child('rooms').child($roomCode).child('players').child(newData.child('hostPlayerId').val()).child('uid').val() === auth.uid))",
+          ".validate": "!newData.exists() || (newData.hasChildren(['roomCode', 'fromUid', 'fromName', 'hostPlayerId', 'at']) && newData.child('roomCode').val() === $roomCode && newData.child('at').val() > 0)"
+        }
+      }
+    },
+    // presence/{uid} = { online, lastSeen }. Any signed-in player can read it
+    // (drives the friends list online dots); only the owner writes it.
+    "presence": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
     }
   }
 }
