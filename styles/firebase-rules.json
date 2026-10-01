@@ -1,0 +1,186 @@
+{
+  "rules": {
+    // Multiplayer rooms (unchanged): open so guests can play together.
+    "rooms": {
+      "$code": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    // Global matchmaking index (rooms open to random players).
+    "publicLobby": {
+      ".read": true,
+      ".write": true
+    },
+    // Player accounts: only the signed-in owner can read or write their own data.
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "game": {
+          ".validate": "newData.hasChildren(['coins', 'gems', 'owned', 'equipped'])"
+        }
+      }
+    },
+
+    // ---------------- Ranked (Elo) ----------------
+    // ranked/{uid} = { elo, wins, losses, matches, updatedAt }.
+    // Any signed-in user can read (leaderboard); only the owner can write their own record.
+    // ".read" sits on "ranked" itself because the leaderboard query (orderByChild('elo')) reads that node.
+    // NOTE: Elo is computed on the client, so a skilled user can still edit their own record.
+    // Real anti-cheat needs Cloud Functions (accepted for now).
+    "ranked": {
+      ".read": "auth != null",
+      ".indexOn": ["elo"],
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['elo', 'wins', 'losses', 'matches'])",
+        "elo": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3000" },
+        "wins": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0" },
+        "losses": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0" },
+        "matches": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0" },
+        "updatedAt": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    // ---------------- Friends ----------------
+    // Player ID (8 chars) -> uid, so players can be searched by ID. Only you can claim your own ID.
+    "playerIds": {
+      "$pid": {
+        ".read": "auth != null",
+        ".write": "auth != null && newData.val() === auth.uid && (!data.exists() || data.val() === auth.uid)",
+        ".validate": "$pid.matches(/^[A-Z0-9]{8}$/)"
+      }
+    },
+    // Public profile other players can see (name, photo, best score...). Private data stays in users/.
+    "publicProfiles": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    // My friends list. I write my own list; I can also add/remove myself on someone else's list,
+    // but adding is only allowed when that person sent me a friend request (i.e. on accept).
+    "friends": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$fid": {
+          ".write": "auth != null && (auth.uid === $uid || (auth.uid === $fid && (!newData.exists() || root.child('friendRequests').child(auth.uid).child($uid).exists())))"
+        }
+      }
+    },
+    // Inbox of friend requests (drives the notification badge).
+    // Only the sender can create a request; the receiver can only delete it (accept / decline).
+    "friendRequests": {
+      "$to": {
+        ".read": "auth != null && auth.uid === $to",
+        "$from": {
+          ".read": "auth != null && auth.uid === $from",
+          ".write": "auth != null && (auth.uid === $from || (auth.uid === $to && !newData.exists()))",
+          ".validate": "!newData.exists() || (newData.hasChildren(['name', 'at']) && $from !== $to)"
+        }
+      }
+    },
+    // Requests I sent (so I can show "Request sent" and cancel).
+    "friendRequestsSent": {
+      "$from": {
+        ".read": "auth != null && auth.uid === $from",
+        "$to": {
+          ".write": "auth != null && (auth.uid === $from || (auth.uid === $to && !newData.exists()))"
+        }
+      }
+    },
+
+    // ---------------- Admin panel ----------------
+    // Who counts as admin: the bootstrap Player ID IOXN75FA (always), or admins/{uid} === true.
+    // The same check guards storeConfig, grants and the admin list itself.
+    "admins": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && (root.child('playerIds').child('IOXN75FA').val() === auth.uid || root.child('admins').child(auth.uid).val() === true)",
+        ".validate": "newData.val() === true"
+      }
+    },
+    // Admin-managed store catalog: overrides + custom items for skins/trails/avatars/VIP.
+    // Everyone reads it (the shop needs it); only admins write it.
+    "storeConfig": {
+      ".read": true,
+      ".write": "auth != null && (root.child('playerIds').child('IOXN75FA').val() === auth.uid || root.child('admins').child(auth.uid).val() === true)"
+    },
+    // Currency gifts from the admin panel: grants/{uid} = { coins, gems, at, by }.
+    // Only the recipient can read their own grant; only admins can write.
+    // The player's own client claims it (adds coins/gems, then deletes the node).
+    "grants": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && (root.child('playerIds').child('IOXN75FA').val() === auth.uid || root.child('admins').child(auth.uid).val() === true)",
+        ".validate": "newData.hasChildren(['coins', 'gems'])"
+      }
+    },
+
+    // ---------------- Mailbox (news + gifts) ----------------
+    // news/{id}: announcement for EVERY player, optional reward (coins/gems) each player claims once.
+    // Signed-in players read; only admins write. Read/claimed state is kept by each player in
+    // users/{uid}/mailState (owner-only), so nothing of the players' data is touched by the admin.
+    "news": {
+      ".read": "auth != null",
+      "$id": {
+        ".write": "auth != null && (root.child('playerIds').child('IOXN75FA').val() === auth.uid || root.child('admins').child(auth.uid).val() === true)",
+        ".validate": "!newData.exists() || newData.hasChildren(['title', 'at'])",
+          "title": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 80" },
+          "body": { ".validate": "newData.isString() && newData.val().length <= 600" },
+          "coins": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000" },
+          "gems": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000" },
+          "vipDays": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 365 && newData.val() % 1 === 0" },
+          "items": {
+            ".validate": "newData.hasChildren() && newData.numChildren() <= 12",
+            "$itemId": { ".validate": "newData.val() === true && $itemId.matches(/^[a-z0-9_]{1,48}$/)" }
+          },
+          "at": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+      }
+    },
+    // mailbox/{uid}/{id}: personal mail (with optional reward) from an admin to ONE player.
+    // Only that player reads it; only admins create it; the player may delete their own mail.
+    "mailbox": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$id": {
+          ".write": "auth != null && (root.child('playerIds').child('IOXN75FA').val() === auth.uid || root.child('admins').child(auth.uid).val() === true) || (auth != null && auth.uid === $uid && !newData.exists())",
+          ".validate": "!newData.exists() || newData.hasChildren(['title', 'at'])",
+          "title": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 80" },
+          "body": { ".validate": "newData.isString() && newData.val().length <= 600" },
+          "coins": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000" },
+          "gems": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000" },
+          "vipDays": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 365 && newData.val() % 1 === 0" },
+          "items": {
+            ".validate": "newData.hasChildren() && newData.numChildren() <= 12",
+            "$itemId": { ".validate": "newData.val() === true && $itemId.matches(/^[a-z0-9_]{1,48}$/)" }
+          },
+          "at": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      }
+    }
+  }
+,
+    // ---------------- Play Billing receipts (audit) ----------------
+    // purchases/{uid}/{orderId}: written by the player's own app right after a
+    // confirmed Google Play purchase (best-effort audit trail for the admin).
+    // Only the player writes their own receipts; the player and admins can read.
+    "purchases": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('playerIds').child('IOXN75FA').val() === auth.uid || root.child('admins').child(auth.uid).val() === true)",
+        "$orderId": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.hasChildren(['sku', 'at'])",
+          "sku": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 80" },
+          "kind": { ".validate": "newData.isString() && newData.val().length <= 20" },
+          "ref": { ".validate": "newData.isString() && newData.val().length <= 80" },
+          "at": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      }
+    }
+}

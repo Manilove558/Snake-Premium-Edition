@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Snake Premium</string>
+    <string name="title_activity_main">Snake Premium</string>
+    <string name="package_name">com.mani.snakegame</string>
+    <string name="custom_url_scheme">com.mani.snakegame</string>
+</resources>

@@ -1,0 +1,81 @@
+"use client"
+import { useSyncExternalStore } from "react"
+import { get, ref, set, update } from "firebase/database"
+import { getFirebaseDb } from "./firebase"
+import { publishPublicProfile, syncPublicStats } from "./friends"
+import { setLocalCustomName } from "./profile-name"
+import { getStoreState, replaceStore, resetStore, subscribeStore, mergeStates, hasProgress, type StoreState } from "./store"
+
+// Cloud save: users/{uid}/game holds the progress, users/{uid}/profile the public profile.
+// Guest progress lives only in localStorage; after login it is merged into the account, never overwritten.
+export type SyncStatus = "idle" | "syncing" | "saved" | "offline"
+let status: SyncStatus = "idle"
+let lastSaved = 0
+const ls = new Set<() => void>()
+const setStatus = (s: SyncStatus) => { status = s; if (s === "saved") lastSaved = Date.now(); ls.forEach((l) => l()) }
+export function useSyncStatus() {
+  useSyncExternalStore((cb) => { ls.add(cb); return () => { ls.delete(cb) } }, () => status + lastSaved, () => "idle0")
+  return { status, lastSaved }
+}
+
+const OWNER_KEY = "snake-store-owner"
+let timer: ReturnType<typeof setTimeout> | null = null
+let stop: (() => void) | null = null
+let activeUid: string | null = null
+const clean = (s: StoreState) => JSON.parse(JSON.stringify(s))
+
+export async function pushNow(uid = activeUid) {
+  if (!uid) return
+  if (timer) { clearTimeout(timer); timer = null }
+  try { setStatus("syncing"); await set(ref(getFirebaseDb(), `users/${uid}/game`), clean(getStoreState())); syncPublicStats(uid).catch(() => {}); setStatus("saved") } catch { setStatus("offline") }
+}
+
+export async function attachAccount(u: { uid: string; displayName: string | null; photoURL: string | null }) {
+  activeUid = u.uid
+  setStatus("syncing")
+  try {
+    const db = getFirebaseDb()
+    const snap = await get(ref(db, `users/${u.uid}`))
+    const cloud = snap.val()?.game as StoreState | undefined
+    const local = getStoreState()
+    const owner = localStorage.getItem(OWNER_KEY)
+    let target = local
+    if (owner && owner !== u.uid) { resetStore(); target = cloud || getStoreState() } // another account's leftovers: never mix
+    else if (cloud) target = hasProgress(local) || owner === u.uid ? mergeStates(local, cloud) : cloud
+    replaceStore(target)
+    localStorage.setItem(OWNER_KEY, u.uid)
+    // A name the player edited in Profile beats the Google name (and survives every sign-in)
+    const savedProf = snap.val()?.profile
+    const edited = savedProf?.nameEdited && typeof savedProf.name === "string" && savedProf.name.trim() ? (savedProf.name as string) : ""
+    setLocalCustomName(edited)
+    const finalName = edited || u.displayName || "Player"
+    const prof: Record<string, unknown> = { name: finalName, photo: u.photoURL || null, lastLogin: Date.now() }
+    if (!snap.exists() || !savedProf?.createdAt) prof.createdAt = Date.now()
+    await update(ref(db, `users/${u.uid}/profile`), prof)
+    await set(ref(db, `users/${u.uid}/game`), clean(getStoreState()))
+    // Make the account findable by Player ID (friends) — never blocks the save if it fails
+    publishPublicProfile({ ...u, displayName: finalName }, (prof.createdAt as number | undefined) ?? savedProf?.createdAt ?? null).catch(() => {})
+    setStatus("saved")
+  } catch {
+    setStatus("offline")
+  }
+  stop?.()
+  const unsub = subscribeStore(() => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => pushNow(u.uid), 1500)
+  })
+  const onHide = () => { if (document.visibilityState === "hidden") pushNow(u.uid) }
+  document.addEventListener("visibilitychange", onHide)
+  stop = () => { unsub(); document.removeEventListener("visibilitychange", onHide) }
+}
+
+/** Save to the cloud, then clear this device so the next person starts clean. */
+export async function detachAccount() {
+  const uid = activeUid
+  if (uid) await pushNow(uid)
+  stop?.(); stop = null; activeUid = null
+  localStorage.removeItem(OWNER_KEY)
+  setLocalCustomName("") // the next person on this device must not inherit the name
+  resetStore()
+  setStatus("idle")
+}
