@@ -19,6 +19,7 @@ import { Switch } from "@/components/ui/switch"
 import { useSoundManager } from "./sound-manager"
 import MultiplayerLobby from "./multiplayer-lobby"
 import { SnakeStore } from "./snake-store"
+import { SnakeVault } from "./snake-vault"
 import { AdminButton } from "./admin-panel"
 import { MailboxButton } from "./mailbox"
 import { useAuthUser } from "@/lib/auth"
@@ -1963,6 +1964,7 @@ export default function SnakeGame() {
             <SnakeProfile />
             <SnakeFriends />
             <MailboxButton />
+            <SnakeVault />
             <SnakeStore />
             <AdminButton />
           <Button

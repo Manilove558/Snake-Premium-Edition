@@ -82,3 +82,15 @@
 - Demo mode me ab ₹ item ya gem pack par Buy dabane se seedha grant nahi hota — pehle ek chhota confirm popup aata hai ("Demo khareed hai — paise nahi katega", Confirm/Cancel). Galti se tap se bachne ke liye.
 - Sirf demo mode me lagta hai; asli Google Play sheet wale flow (payMode === "play") me koi badlav nahi.
 - Files: components/snake-store.tsx.
+
+## v15.7 — Vault + tap-to-play GIF avatars
+- Header me naya **Vault** icon (Store ke bagal me) — har player ko dikhta hai. Vault me player ke apne saare items (Skins / Trails / Food / Avatars) hain, wahi se **Equip** kar sakta hai.
+- Jo item equipped hai wo Vault me sabse **upar "Equipped"** section me dikhta hai (skin, trail, food, avatar), aur har tab me bhi equipped item pehle aata hai.
+- Store (aur Vault) me GIF wala avatar ab **click/tap karne par** ek baar chalta hai (pehle apne aap chalta tha).
+- Files: components/snake-vault.tsx (naya), components/player-avatar.tsx (`tapToPlay`), components/snake-store.tsx, components/snake-game.tsx, lib/store.ts (spanish gif `imgMs: 2000`).
+- Deploy: `npm run build` → `npx cap sync android` → Android Studio se run.
+
+## v15.7.1 — Vault compact + nested-button fix
+- Bug: Vault ke "Equipped" tile (button) ke andar GIF avatar ka button tha → "<button> cannot be a descendant of <button>" hydration error. Ab Equipped tile `div[role=button]` hai, aur wahan avatar sirf still dikhta hai.
+- Vault compact: Equipped ek hi row me 4 chhote tiles; items 3-column chhote cards (chhota preview, 11px naam, 28px Equip button); header aur tabs chhote.
+- Preview ab component ke bahar hai, isliye toast/state change par GIF reset nahi hota.

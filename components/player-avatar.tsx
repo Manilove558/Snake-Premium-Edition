@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { User as UserIcon } from "lucide-react"
 import { getCatalogItem, type StoreItem } from "@/lib/store"
 
@@ -39,7 +39,8 @@ function loadGifBlob(src: string): Promise<Blob> {
 function usePlayOnceSrc(src: string | undefined, enabled: boolean, key: string): string | null {
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
-    if (!enabled || !src) { setUrl(null); return }
+    setUrl(null)
+    if (!enabled || !src) return
     let alive = true
     let made: string | null = null
     loadGifBlob(src)
@@ -63,6 +64,7 @@ export function PlayerAvatar({
   ring = true,
   className = "",
   animate = false,
+  tapToPlay = false,
 }: {
   photo?: string | null
   avatarId?: string | null
@@ -72,17 +74,38 @@ export function PlayerAvatar({
   className?: string
   /** play the avatar's GIF animation once (store avatar cards + profile views) */
   animate?: boolean
+  /** show the still frame; the GIF plays once each time the player taps / clicks the avatar (Store + Vault) */
+  tapToPlay?: boolean
 }) {
   const av = resolveAvatar(avatarId, vip)
   const isAnimated = !!av?.imgStill && !!av.img
-  const playSrc = usePlayOnceSrc(av?.img, animate && isAnimated, `${avatarId}`)
+  const [tapKey, setTapKey] = useState(0)
+  const [tapping, setTapping] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
+  const onTap = () => {
+    setTapKey((k) => k + 1)
+    setTapping(true)
+    if (timer.current) clearTimeout(timer.current)
+    // GIF plays once; go back to the still frame when it is over (fallback 2.5s if length unknown)
+    timer.current = setTimeout(() => setTapping(false), (av?.imgMs ?? 2500) + 400)
+  }
+  const playSrc = usePlayOnceSrc(av?.img, (animate || tapping) && isAnimated, `${avatarId}:${tapKey}`)
   const base = `rounded-full shrink-0 ${ring ? "ring-2 ring-emerald-500" : ""} ${className}`
   if (av) {
     if (av.img) {
       // custom image avatar (VIP artwork); animated ones show their still frame until `animate` kicks in
-      const shown = isAnimated ? (animate ? (playSrc ?? av.imgStill!) : av.imgStill!) : av.img
+      const shown = isAnimated ? (animate || tapping ? (playSrc ?? av.imgStill!) : av.imgStill!) : av.img
       // eslint-disable-next-line @next/next/no-img-element
-      return <img src={shown} alt={av.name} style={{ width: size, height: size }} className={`${base} object-cover bg-emerald-900/20`} />
+      const imgEl = <img src={shown} alt={av.name} style={{ width: size, height: size }} className={`${base} object-cover bg-emerald-900/20`} />
+      if (tapToPlay && isAnimated) {
+        return (
+          <button type="button" aria-label={`Play ${av.name}`} onClick={onTap} className="relative shrink-0 rounded-full active:scale-95 transition-transform" style={{ width: size, height: size }}>
+            {imgEl}
+          </button>
+        )
+      }
+      return imgEl
     }
     return (
       <div

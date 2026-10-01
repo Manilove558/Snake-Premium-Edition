@@ -151,7 +151,7 @@ export const ITEMS: StoreItem[] = [
   { id: "avatar_vip_panda", kind: "avatar", name: "VIP Panda", price: 0, currency: "coins", vipOnly: true, img: "/avatars/avatar_vip_panda.png" },
   { id: "avatar_vip_cat", kind: "avatar", name: "VIP Cat", price: 0, currency: "coins", vipOnly: true, img: "/avatars/avatar_vip_cat.png" },
   // Animated VIP avatar: the GIF plays once when someone opens the player's profile, a still frame is used elsewhere
-  { id: "avatar_vip_spanish", kind: "avatar", name: "VIP Spanish Girl", price: 0, currency: "coins", vipOnly: true, img: "/avatars/avatar_vip_spanish.gif", imgStill: "/avatars/avatar_vip_spanish_still.png" },
+  { id: "avatar_vip_spanish", kind: "avatar", name: "VIP Spanish Girl", price: 0, currency: "coins", vipOnly: true, img: "/avatars/avatar_vip_spanish.gif", imgStill: "/avatars/avatar_vip_spanish_still.png", imgMs: 2000 },
 
   // ----------------------------------- VIP -----------------------------------
   { id: "vip_pass", kind: "vip", name: "VIP Pass (30 days)", price: 149, currency: "inr", featured: true },

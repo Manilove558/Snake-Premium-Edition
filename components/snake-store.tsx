@@ -127,7 +127,7 @@ export function SnakeStore() {
       <div className={`${wide ? "min-w-[68%] snap-start" : ""} rounded-2xl p-2 flex flex-col ${glass} ${on ? "ring-2 ring-emerald-500 shadow-emerald-500/30" : ""}`}>
         <div className="relative w-full aspect-[3/2] rounded-xl overflow-hidden border border-black/10 dark:border-white/10">
           {it.kind === "avatar"
-            ? <div className={`absolute inset-0 flex items-center justify-center bg-black/5 dark:bg-white/5 ${locked ? "opacity-60" : ""}`}><PlayerAvatar photo={user?.photoURL} avatarId={it.id} vip size={64} ring={false} animate /></div>
+            ? <div className={`absolute inset-0 flex items-center justify-center bg-black/5 dark:bg-white/5 ${locked ? "opacity-60" : ""}`}><PlayerAvatar photo={user?.photoURL} avatarId={it.id} vip size={64} ring={false} tapToPlay /></div>
             : <div className={`absolute inset-0 ${locked ? "opacity-60" : ""}`} dangerouslySetInnerHTML={{ __html: boardSvg(it, dark) }} />}
           {it.vipOnly && <span className="absolute top-1 left-1 inline-flex items-center gap-0.5 rounded-full bg-amber-400 text-[#3b2a00] text-[9px] font-bold px-1.5 py-0.5"><Crown className="h-2.5 w-2.5" />VIP</span>}
           {locked && <span className="absolute inset-0 flex items-center justify-center"><Lock className="h-6 w-6 text-white drop-shadow" /></span>}
@@ -245,7 +245,7 @@ export function SnakeStore() {
             {tab === "avatars" && (
               <>
                 <div className={`mt-4 rounded-2xl p-3 flex items-center gap-3 ${glass}`}>
-                  <PlayerAvatar photo={user?.photoURL} avatarId={st.equipped.avatar} vip={vipOn} size={52} animate />
+                  <PlayerAvatar photo={user?.photoURL} avatarId={st.equipped.avatar} vip={vipOn} size={52} tapToPlay />
                   <div className="text-[12px] text-muted-foreground leading-snug">Your profile picture. Everyone can see it on your profile and in multiplayer.</div>
                 </div>
                 <Head t="Free avatars" n={avatarFree.length} /><Grid items={avatarFree} />
