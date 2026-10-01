@@ -4,6 +4,7 @@ import { get, ref, set, update } from "firebase/database"
 import { getFirebaseDb } from "./firebase"
 import { publishPublicProfile, syncPublicStats } from "./friends"
 import { setLocalCustomName } from "./profile-name"
+import { claimSession, releaseSession } from "./session"
 import { getStoreState, replaceStore, resetStore, subscribeStore, mergeStates, hasProgress, type StoreState } from "./store"
 
 // Cloud save: users/{uid}/game holds the progress, users/{uid}/profile the public profile.
@@ -32,6 +33,7 @@ export async function pushNow(uid = activeUid) {
 
 export async function attachAccount(u: { uid: string; displayName: string | null; photoURL: string | null }) {
   activeUid = u.uid
+  claimSession(u.uid) // one device at a time: this device now owns the account, any other device gets logged out
   setStatus("syncing")
   try {
     const db = getFirebaseDb()
@@ -69,10 +71,14 @@ export async function attachAccount(u: { uid: string; displayName: string | null
   stop = () => { unsub(); document.removeEventListener("visibilitychange", onHide) }
 }
 
-/** Save to the cloud, then clear this device so the next person starts clean. */
-export async function detachAccount() {
+/**
+ * Save to the cloud, then clear this device so the next person starts clean.
+ * save=false: this device was kicked (account opened elsewhere) — do NOT push, it would overwrite the new device's progress.
+ */
+export async function detachAccount(save = true) {
   const uid = activeUid
-  if (uid) await pushNow(uid)
+  if (save) { if (uid) { await pushNow(uid); await releaseSession(uid) } }
+  else if (timer) { clearTimeout(timer); timer = null }
   stop?.(); stop = null; activeUid = null
   localStorage.removeItem(OWNER_KEY)
   setLocalCustomName("") // the next person on this device must not inherit the name

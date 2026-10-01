@@ -23,6 +23,19 @@
       }
     },
 
+    // One device at a time per account: sessions/{uid} = { id: <device id>, at }.
+    // The last device to log in owns it; other devices see the change and log themselves out.
+    "sessions": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['id', 'at'])",
+        "id": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 64" },
+        "at": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+
     // ---------------- Ranked (Elo) ----------------
     // ranked/{uid} = { elo, wins, losses, matches, updatedAt }.
     // Public read: the home-screen ranked leaderboard must also work for GUESTS

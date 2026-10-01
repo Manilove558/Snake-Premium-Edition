@@ -18,6 +18,8 @@ import {
   type RankedRecord,
 } from "@/lib/ranked"
 import { useStore, claimRankRewards } from "@/lib/store"
+import { openPlayerProfile } from "@/lib/friends"
+import { PlayerAvatar } from "./player-avatar"
 
 // ---------------------------------------------------------------------------
 // Small shared pieces (also used by the battle results screen)
@@ -367,10 +369,13 @@ export default function RankedPanel({ darkMode, uid, online, busy, globalBusy = 
                   }`}
                 >
                   <span className={`w-6 shrink-0 text-center text-xs font-bold ${i < 3 ? "text-amber-500" : muted}`}>{i + 1}</span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                    {r.name}
-                    {mine && <span className={`text-[11px] ${muted}`}> (you)</span>}
-                  </span>
+                  <button type="button" onClick={() => openPlayerProfile(r.uid)} className="min-w-0 flex-1 flex items-center gap-2 text-left">
+                    <PlayerAvatar photo={r.photo} avatarId={r.avatar} vip={r.vip} size={28} ring={false} />
+                    <span className="min-w-0 truncate text-sm font-medium">
+                      {r.vip && <span className="mr-0.5">👑</span>}{r.name}
+                      {mine && <span className={`text-[11px] ${muted}`}> (you)</span>}
+                    </span>
+                  </button>
                   <TierBadge elo={r.elo} onClick={() => setSheet({ name: r.name, rec: { elo: r.elo, wins: r.wins, losses: r.losses, matches: r.matches }, isMe: mine })} />
                   <span className="w-12 shrink-0 text-right text-sm font-bold tabular-nums">{r.elo}</span>
                 </div>

@@ -121,6 +121,8 @@ export const ITEMS: StoreItem[] = [
   // --------------------------------- Avatars ---------------------------------
   // Free avatars are usable by everyone. VIP avatars are usable while the VIP Pass is active
   // (no purchase step: see owns()). "avatar_photo" = the Google profile photo (default).
+  // default for every NEW account: the plain user icon (public/default-avatar.png)
+  { id: "avatar_default", kind: "avatar", name: "Default", price: 0, currency: "coins", img: "/default-avatar.png" },
   { id: "avatar_photo", kind: "avatar", name: "Google Photo", price: 0, currency: "coins" },
   { id: "avatar_snake", kind: "avatar", name: "Snake", price: 0, currency: "coins", emoji: "🐍", bg: ["#34d399", "#059669"] },
   { id: "avatar_apple", kind: "avatar", name: "Red Apple", price: 0, currency: "coins", emoji: "🍎", bg: ["#fb7185", "#be123c"] },
@@ -170,17 +172,20 @@ export interface StoreState {
   rankClaimed: string[]
   best: number
   updatedAt: number
+  /** save-format version: 2 = old default avatar (😎 Cool) was swapped for the new "Default" icon once */
+  avatarV?: number
 }
 const DEFAULT: StoreState = {
   coins: 250,
   gems: 50,
   owned: ["skin_classic", "food_classic", "trail_none"],
-  equipped: { skin: "skin_classic", trail: "trail_none", food: "food_classic", avatar: "avatar_cool" },
+  equipped: { skin: "skin_classic", trail: "trail_none", food: "food_classic", avatar: "avatar_default" },
   vipUntil: 0,
   vipDailyAt: 0,
   rankClaimed: [],
   best: 0,
   updatedAt: 0,
+  avatarV: 2,
 }
 const KEY = "snake-store-v1"
 let state: StoreState = DEFAULT
@@ -200,6 +205,9 @@ function load() {
 }
 /** When the VIP Pass runs out, VIP-only skins / trails / food are unequipped (they come back when VIP does). */
 function sanitize(s: StoreState): StoreState {
+  // one-time: accounts that still carry the OLD default avatar (😎 Cool) get the new "Default" user icon.
+  // After this runs avatarV = 2, so anything the player picks later (even Cool) is left alone.
+  if ((s.avatarV ?? 0) < 2) s = { ...s, avatarV: 2, equipped: { ...s.equipped, avatar: s.equipped.avatar === "avatar_cool" ? DEFAULT.equipped.avatar : s.equipped.avatar } }
   if (s.vipUntil > Date.now()) return s
   let eq = s.equipped, changed = false
   for (const k of ["skin", "trail", "food", "avatar"] as const) {

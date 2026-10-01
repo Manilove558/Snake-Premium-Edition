@@ -104,26 +104,39 @@ export interface LeaderboardRow {
   wins: number
   losses: number
   matches: number
+  /** public profile bits for the avatar next to the name (guests / missing profile → defaults) */
+  photo: string | null
+  avatar: string | null
+  vip: boolean
 }
 
 /** Top players by Elo (highest first): ranked ordered by child "elo", last 20, reversed. */
 export async function fetchLeaderboard(limit = 20): Promise<LeaderboardRow[]> {
   const db = getFirebaseDb()
   const snap = await get(query(ref(db, "ranked"), orderByChild("elo"), limitToLast(limit)))
-  const rows: Omit<LeaderboardRow, "name">[] = []
+  const rows: Pick<LeaderboardRow, "uid" | "elo" | "wins" | "losses" | "matches">[] = []
   snap.forEach((child) => {
     const rec = normalizeRankedRecord(child.val())
     rows.push({ uid: child.key as string, elo: rec.elo, wins: rec.wins, losses: rec.losses, matches: rec.matches })
   })
   rows.reverse() // RTDB returns ascending order
-  const names = await Promise.all(
-    rows.map((r) =>
-      get(ref(db, `publicProfiles/${r.uid}/name`))
-        .then((s) => (typeof s.val() === "string" && s.val() ? (s.val() as string) : "Player"))
-        .catch(() => "Player"),
-    ),
+  // Only the name is world-readable; photo / avatar need a signed-in user, so fall back to name-only.
+  const infos = await Promise.all(
+    rows.map(async (r) => {
+      const base = { name: "Player", photo: null as string | null, avatar: null as string | null, vip: false }
+      try {
+        const v = (await get(ref(db, `publicProfiles/${r.uid}`))).val()
+        if (v) return { name: typeof v.name === "string" && v.name ? v.name : "Player", photo: v.photo || null, avatar: typeof v.avatar === "string" ? v.avatar : null, vip: !!v.vip }
+      } catch {
+        try {
+          const n = (await get(ref(db, `publicProfiles/${r.uid}/name`))).val()
+          if (typeof n === "string" && n) base.name = n
+        } catch {}
+      }
+      return base
+    }),
   )
-  return rows.map((r, i) => ({ ...r, name: names[i] }))
+  return rows.map((r, i) => ({ ...r, ...infos[i] }))
 }
 
 /**

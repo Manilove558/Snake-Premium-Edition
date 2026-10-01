@@ -20,6 +20,7 @@ import { useSoundManager } from "./sound-manager"
 import MultiplayerLobby from "./multiplayer-lobby"
 import { SnakeStore } from "./snake-store"
 import { SnakeVault } from "./snake-vault"
+import { SessionGuard } from "./session-guard"
 import { AdminButton } from "./admin-panel"
 import { MailboxButton } from "./mailbox"
 import { useAuthUser } from "@/lib/auth"
@@ -1931,6 +1932,11 @@ export default function SnakeGame() {
     }
   }, [])
 
+  // Ranked leaderboard shows on the multiplayer home — also on the game-over screen once the player swiped to the ranked mode
+  const showRankedBoard = gameMode === GAME_MODES.MULTIPLAYER && (!gameStarted || gameOver)
+  // After a game ends the button says "Play Again" only until the player swipes to pick a mode; then it is a fresh "Start Game"
+  const swipedAfterGameOver = gameOver && modePreviewActive
+
   return (
     <Card className="w-full max-w-md mx-auto border-0 shadow-none bg-transparent premium-surface animate-fade-in">
       {toast && (
@@ -1938,16 +1944,17 @@ export default function SnakeGame() {
           {toast}
         </div>
       )}
+      <SessionGuard />
       {/* Ranked leaderboard: lives in the space above the header. Shown with a smooth
           animation only on the multiplayer (ranked) mode home; hides when any other
           mode is picked or a game starts. */}
       <div
-        aria-hidden={!(gameMode === GAME_MODES.MULTIPLAYER && !gameStarted)}
+        aria-hidden={!(showRankedBoard)}
         className="overflow-hidden transition-all duration-500 ease-in-out"
         style={{
-          maxHeight: gameMode === GAME_MODES.MULTIPLAYER && !gameStarted ? 260 : 0,
-          opacity: gameMode === GAME_MODES.MULTIPLAYER && !gameStarted ? 1 : 0,
-          marginBottom: gameMode === GAME_MODES.MULTIPLAYER && !gameStarted ? 8 : 0,
+          maxHeight: showRankedBoard ? 260 : 0,
+          opacity: showRankedBoard ? 1 : 0,
+          marginBottom: showRankedBoard ? 8 : 0,
         }}
       >
         <HomeLeaderboard />
@@ -2154,10 +2161,10 @@ export default function SnakeGame() {
                 onClick={() => (gameMode === GAME_MODES.MULTIPLAYER ? setMpView("lobby") : initGame())}
                 className="h-12 rounded-xl text-base font-semibold bg-gradient-to-r from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 text-white shadow-lg shadow-emerald-500/30 active:animate-pop"
               >
-                {gameOver ? "Play Again" : "Start Game"}
+                {gameOver && !swipedAfterGameOver ? "Play Again" : "Start Game"}
               </Button>
 
-              {gameOver && (
+              {gameOver && !swipedAfterGameOver && (
                 <div className="text-center rounded-2xl bg-white/70 dark:bg-white/5 border border-black/5 dark:border-white/10 py-4 px-3">
                   <div className="text-sm text-muted-foreground">Game Over</div>
                   <div className="text-2xl font-bold mt-0.5">{score} pts</div>

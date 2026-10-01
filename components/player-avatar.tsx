@@ -1,6 +1,5 @@
 "use client"
 import { useEffect, useRef, useState } from "react"
-import { User as UserIcon } from "lucide-react"
 import { getCatalogItem, type StoreItem } from "@/lib/store"
 
 /**
@@ -97,7 +96,7 @@ export function PlayerAvatar({
       // custom image avatar (VIP artwork); animated ones show their still frame until `animate` kicks in
       const shown = isAnimated ? (animate || tapping ? (playSrc ?? av.imgStill!) : av.imgStill!) : av.img
       // eslint-disable-next-line @next/next/no-img-element
-      const imgEl = <img src={shown} alt={av.name} style={{ width: size, height: size }} className={`${base} object-cover bg-emerald-900/20`} />
+      const imgEl = <img src={shown} alt={av.name} style={{ width: size, height: size }} className={`${base} object-cover ${av.id === "avatar_default" ? "dark:invert" : "bg-emerald-900/20"}`} />
       if (tapToPlay && isAnimated) {
         return (
           <button type="button" aria-label={`Play ${av.name}`} onClick={onTap} className="relative shrink-0 rounded-full active:scale-95 transition-transform" style={{ width: size, height: size }}>
@@ -121,9 +120,7 @@ export function PlayerAvatar({
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={photo} alt="" referrerPolicy="no-referrer" style={{ width: size, height: size }} className={base} />
   }
-  return (
-    <div style={{ width: size, height: size }} className={`${base} bg-emerald-500/20 flex items-center justify-center`}>
-      <UserIcon className="text-emerald-500" style={{ width: size * 0.5, height: size * 0.5 }} />
-    </div>
-  )
+  // default icon (no store avatar, no Google photo) — black line art, inverted in dark mode
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src="/default-avatar.png" alt="" style={{ width: size, height: size }} className={`${base} object-cover dark:invert`} />
 }

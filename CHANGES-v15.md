@@ -94,3 +94,39 @@
 - Bug: Vault ke "Equipped" tile (button) ke andar GIF avatar ka button tha → "<button> cannot be a descendant of <button>" hydration error. Ab Equipped tile `div[role=button]` hai, aur wahan avatar sirf still dikhta hai.
 - Vault compact: Equipped ek hi row me 4 chhote tiles; items 3-column chhote cards (chhota preview, 11px naam, 28px Equip button); header aur tabs chhote.
 - Preview ab component ke bahar hai, isliye toast/state change par GIF reset nahi hota.
+
+## v15.8 — Ranked leaderboard: avatar + profile click
+- Home leaderboard (Top 5) aur Ranked panel ka Top 20: naam ke aage player ka profile avatar (VIP ho to 👑).
+- Avatar/naam par click → us player ka profile khulta hai (Player ID, best score, items owned, rank, member since, Add friend). Ye wahi profile sheet hai jo lobby me khulti hai.
+- `fetchLeaderboard` ab photo / avatar / vip bhi laata hai. Firebase rules me sirf `name` sabke liye readable hai; photo/avatar ke liye login chahiye — guest ko default icon dikhega, naam waise hi. Rules badalne ki zaroorat nahi.
+- Files: lib/ranked-db.ts, components/home-leaderboard.tsx, components/ranked-panel.tsx.
+
+## v15.8.1 — Default avatar icon
+- Jab player ka na store avatar hai na Google photo, ab tumhara diya hua `user.png` icon dikhta hai (public/default-avatar.png, 192px). Dark mode me automatic invert hokar safed ho jata hai.
+- Har jagah lagta hai jahan PlayerAvatar use hota hai (profile, friends, lobby, leaderboard, store).
+- Files: components/player-avatar.tsx, public/default-avatar.png (naya).
+
+## v15.8.2 — Naye account ka default avatar = user icon
+- Pehle naye player ka default avatar 😎 "Cool" emoji tha. Ab naya store avatar **"Default"** (`avatar_default`, tumhara user.png icon) har naye account par equipped aata hai.
+- "Default" free avatar hai — Store → Avatars aur Vault → Avatars me dikhta hai, player kabhi bhi wapas laga sakta hai. Dark mode me icon safed ho jata hai.
+- Purane players ka equipped avatar nahi badla (jo 😎 laga hai wo laga rahega). Apne account par dekhne ke liye Vault/Store se "Default" Equip karo.
+- Files: lib/store.ts, components/player-avatar.tsx.
+
+## v15.8.3 — Default icon sabke liye pehle se equipped
+- Guest ho ya Google account, naya player "Default" user icon ke saath shuru hota hai (Google photo apne aap nahi lagti). Dusra avatar chahiye to Store se le sakta hai.
+- Purane accounts: jinka avatar abhi bhi purana default 😎 Cool tha, wo **ek baar** automatic "Default" icon me badal jata hai (`avatarV` flag). Uske baad player jo bhi chune (Cool bhi) wo waisa hi rehta hai. Cloud save se aane wale purane data par bhi ye lagta hai.
+- Jinhone koi aur avatar (Snake, Frog, VIP, Google Photo...) chuna tha unka avatar nahi badla.
+- Files: lib/store.ts.
+
+## v15.9 — Ek Google account = ek time par ek hi device
+- Bug: ek hi Gmail se do phone me login karke dono me khel sakte the.
+- Ab **jo device baad me login kare wahi account ka malik**; purana device apne aap logout ho jata hai aur popup aata hai ("Logged out — your account was opened on another device"). Purana device logout par cloud save push nahi karta (naye device ka progress overwrite na ho).
+- Kaise: `sessions/{uid}` me device id likhi jati hai; har logged-in device usko live dekhta hai (`lib/session.ts`). Same phone/browser ke kai tab ek hi device maane jaate hain. Normal logout par session free ho jata hai, to turant dusre device par login kar sakte ho.
+- Guest (bina login) par koi asar nahi. Rules publish na ho to ye feature chup-chaap band rehta hai, game nahi tutta.
+- ⚠️ `firebase-rules.json` me naya `sessions` node hai — Firebase Console → Realtime Database → Rules me dobara **Publish** karo, warna ye lock kaam nahi karega.
+- Files: lib/session.ts (naya), components/session-guard.tsx (naya), lib/cloud.ts, components/snake-game.tsx, firebase-rules.json.
+
+## v15.9.1 — Game over ke baad mode badalne ka bug
+- Bug: Classic me mar kar jab player swipe karke Ranked (Multiplayer) mode par jata tha to button "Play Again" hi dikhta tha aur ranked leaderboard gayab rehta tha (leaderboard sirf `!gameStarted` par dikhta tha, game over par `gameStarted` true rehta hai).
+- Fix: swipe karte hi button "Start Game" ho jata hai (aur purana "Game Over — N pts" box hat jata hai); Ranked mode par leaderboard game-over screen par bhi dikhta hai.
+- File: components/snake-game.tsx.
