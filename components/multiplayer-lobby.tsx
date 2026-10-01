@@ -693,7 +693,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
         </div>
       )
     })()}
-    <div className="absolute inset-0 z-50 flex overflow-y-auto p-2 bg-black/60 backdrop-blur-sm">
+    <div className="absolute inset-0 z-50 flex overflow-y-auto p-3 bg-black/60 backdrop-blur-sm">
       <div
         className={`m-auto w-full max-w-md rounded-3xl border p-4 shadow-2xl ${
           darkMode ? "bg-[#0d1f16] border-white/10 text-white" : "bg-white border-black/10 text-[#123321]"
@@ -954,49 +954,6 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
                 )}
               </div>
             )}
-
-            {/* One split button: Start | Leave Room */}
-            {(() => {
-              const canStart = isHost && !loading && players.length >= BATTLE_MIN_PLAYERS
-              return (
-                <div className="flex flex-col gap-2">
-                  <div className="flex h-14 w-full rounded-xl overflow-hidden text-white bg-gradient-to-r from-emerald-500 to-emerald-400 shadow-lg shadow-emerald-500/30">
-                    <button
-                      onClick={handleStartBattle}
-                      disabled={!canStart}
-                      aria-label={isHost ? "Start battle" : "Waiting for Host..."}
-                      title={isHost ? (players.length < BATTLE_MIN_PLAYERS ? `Need at least ${BATTLE_MIN_PLAYERS} players` : "Start battle") : "Waiting for Host..."}
-                      className="flex-1 flex flex-col items-center justify-center gap-0.5 hover:bg-white/15 active:bg-white/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                    >
-                      {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5" />}
-                      <span className={`font-extrabold text-center ${isHost ? "text-[11px] leading-none" : "text-[9px] leading-tight px-1"}`}>
-                        {!isHost ? "Waiting for Host..." : loading ? "Starting…" : "Start"}
-                      </span>
-                    </button>
-                    <div className="w-px my-2.5 bg-white/50" />
-                    <button
-                      onClick={handleLeave}
-                      aria-label="Leave room"
-                      className="flex-1 flex flex-col items-center justify-center gap-0.5 hover:bg-white/15 active:bg-white/25 transition-colors"
-                    >
-                      <LogOut className="w-5 h-5" />
-                      <span className="text-[11px] font-extrabold leading-none">Leave Room</span>
-                    </button>
-                  </div>
-                  {isHost && players.length < BATTLE_MIN_PLAYERS ? (
-                    <p className={`text-center text-[11px] ${darkMode ? "text-white/50" : "text-black/50"}`}>
-                      Need at least {BATTLE_MIN_PLAYERS} players to start
-                    </p>
-                  ) : (
-                    !isHost && !isGlobal && (
-                      <p className={`text-center text-xs ${darkMode ? "text-white/50" : "text-black/50"}`}>
-                        Waiting for the host to start the battle…
-                      </p>
-                    )
-                  )}
-                </div>
-              )
-            })()}
           </div>
         )}
       </div>

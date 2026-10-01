@@ -60,3 +60,9 @@
 - The bottom-bar Leave Room leaves the room (voice + Firebase) and returns to the default single-player view (mpView none, session cleared, frame back to GAME).
 - Lobby reports room state to the home screen via `onRoomInfo` + `actionsRef` (LobbyRoomInfo / LobbyActions in multiplayer-lobby.tsx).
 - Files: components/multiplayer-lobby.tsx, components/snake-game.tsx
+
+## v18.10 — Lobby modal cleanup (single control hub)
+- Central lobby modal: the [ Start | Leave Room ] block under the Voice Chat card is removed. The card now ends right after Voice Chat (global auto-start status line, when present, stays as info only).
+- Start (host only), Leave Room and Multiplayer all live in the bottom-right action bar.
+- Overlay padding p-2 -> p-3; the card stays vertically centred (m-auto), no empty space at the bottom.
+- File: components/multiplayer-lobby.tsx
