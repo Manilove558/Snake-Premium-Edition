@@ -107,9 +107,9 @@ function SettingsPanel({
   const muted = darkMode ? "text-white/60" : "text-black/60"
   const row = `flex items-center justify-between gap-3 px-3 py-3 rounded-xl ${darkMode ? "bg-white/5" : "bg-black/5"}`
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    <div className="absolute inset-0 z-[60] flex overflow-y-auto p-2 bg-black/60 backdrop-blur-sm">
       <div
-        className={`w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-3xl border p-6 shadow-2xl ${
+        className={`m-auto w-full max-w-sm max-h-full overflow-y-auto rounded-3xl border p-5 shadow-2xl ${
           darkMode ? "bg-[#0d1f16] border-white/10 text-white" : "bg-white border-black/10 text-[#123321]"
         }`}
       >
@@ -561,9 +561,9 @@ export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, init
       const roomUids = new Set(players.map((p) => p.uid).filter(Boolean) as string[])
       const list = friendUids.filter((fid) => !roomUids.has(fid))
       return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="absolute inset-0 z-[60] flex overflow-y-auto p-2 bg-black/60 backdrop-blur-sm">
           <div
-            className={`w-full max-w-sm rounded-3xl border p-6 shadow-2xl ${
+            className={`m-auto w-full max-w-sm rounded-3xl border p-5 shadow-2xl ${
               darkMode ? "bg-[#0d1f16] border-white/10 text-white" : "bg-white border-black/10 text-[#123321]"
             }`}
           >
@@ -643,9 +643,9 @@ export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, init
         </div>
       )
     })()}
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    <div className="absolute inset-0 z-50 flex overflow-y-auto p-2 bg-black/60 backdrop-blur-sm">
       <div
-        className={`w-full max-w-sm rounded-3xl border p-6 shadow-2xl ${
+        className={`m-auto w-full max-w-sm rounded-3xl border p-4 shadow-2xl ${
           darkMode ? "bg-[#0d1f16] border-white/10 text-white" : "bg-white border-black/10 text-[#123321]"
         }`}
       >

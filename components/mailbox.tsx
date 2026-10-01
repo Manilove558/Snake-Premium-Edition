@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
+import { usePanelState, usePanelTarget } from "./panel-host"
 import { Bell, Check, Coins, Crown, Gem, Gift, Inbox, Megaphone, X } from "lucide-react"
 import { useAuthUser } from "@/lib/auth"
 import { claimAllMail, claimMail, hasReward as hasRew, markMailRead, useMailbox, type MailItem } from "@/lib/mailbox"
@@ -23,7 +24,8 @@ export function MailboxButton() {
   const { user } = useAuthUser()
   const uid = user?.uid ?? null
   const { items, badge, claimable } = useMailbox(uid)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = usePanelState("MAILBOX")
+  const panelTarget = usePanelTarget()
   if (!uid) return null
 
   return (
@@ -32,7 +34,7 @@ export function MailboxButton() {
         aria-label={badge > 0 ? `Mailbox, ${badge} nayi` : "Mailbox"}
         title="Mailbox"
         onClick={() => setOpen(true)}
-        className="relative d-pad-btn inline-flex items-center justify-center h-10 w-10 rounded-full hover:bg-accent hover:text-accent-foreground"
+        className="relative d-pad-btn inline-flex items-center justify-center h-12 w-12 rounded-full hover:bg-accent hover:text-accent-foreground"
       >
         <Bell className={`h-5 w-5 ${badge > 0 ? "text-amber-500" : ""}`} />
         {badge > 0 && (
@@ -41,7 +43,7 @@ export function MailboxButton() {
           </span>
         )}
       </button>
-      {open && createPortal(<MailboxSheet uid={uid} items={items} claimable={claimable} onClose={() => setOpen(false)} />, document.body)}
+      {open && createPortal(<MailboxSheet uid={uid} items={items} claimable={claimable} onClose={() => setOpen(false)} />, panelTarget)}
     </>
   )
 }
@@ -71,10 +73,10 @@ function MailboxSheet({ uid, items, claimable, onClose }: { uid: string; items: 
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center backdrop-blur-md bg-black/30 dark:bg-black/55" onClick={onClose}>
+    <div className="absolute inset-0 z-[10] flex items-center justify-center backdrop-blur-md bg-black/30 dark:bg-black/55" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md max-h-[88dvh] flex flex-col rounded-t-3xl sm:rounded-3xl bg-[#f1f4f1] dark:bg-[#0b0f14] border border-black/5 dark:border-white/10 p-5 shadow-2xl animate-fade-in text-[#123321] dark:text-white"
+        className="w-full max-w-md max-h-full flex flex-col rounded-3xl bg-[#f1f4f1] dark:bg-[#0b0f14] border border-black/5 dark:border-white/10 p-5 shadow-2xl animate-fade-in text-[#123321] dark:text-white"
         style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }}
       >
         <div className="flex items-center justify-between mb-3 shrink-0">
@@ -82,7 +84,7 @@ function MailboxSheet({ uid, items, claimable, onClose }: { uid: string; items: 
             <Inbox className="h-5 w-5 text-emerald-500" />
             <h3 className="text-xl font-bold text-emerald-500">Mailbox</h3>
           </div>
-          <button aria-label="Close" onClick={onClose} className={`d-pad-btn h-9 w-9 rounded-full flex items-center justify-center ${glass}`}><X className="h-4 w-4" /></button>
+          <button aria-label="Close" onClick={onClose} className={`panel-inner-close d-pad-btn h-9 w-9 rounded-full flex items-center justify-center ${glass}`}><X className="h-4 w-4" /></button>
         </div>
 
         {claimable > 1 && (

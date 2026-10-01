@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
+import { usePanelState, usePanelTarget } from "./panel-host"
 import {
   Shield, X, Plus, Pencil, Trash2, RotateCcw, EyeOff, Eye, Crown, Search,
   User as UserIcon, Users, Send, Upload, Megaphone, Coins, Gem, Copy, Check,
@@ -39,7 +40,8 @@ const pill = (on: boolean) =>
 // ---------------------------------------------------------------- header button
 export function AdminButton() {
   const admin = useIsAdmin()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = usePanelState("ADMIN")
+  const panelTarget = usePanelTarget()
   if (!admin) return null
   return (
     <>
@@ -47,11 +49,11 @@ export function AdminButton() {
         aria-label="Admin panel"
         title="Admin panel"
         onClick={() => setOpen(true)}
-        className="rounded-full d-pad-btn h-10 w-10 flex items-center justify-center bg-amber-400/20 text-amber-600 dark:text-amber-300 border border-amber-400/40"
+        className="rounded-full d-pad-btn h-12 w-12 flex items-center justify-center bg-amber-400/20 text-amber-600 dark:text-amber-300 border border-amber-400/40"
       >
         <Shield className="h-5 w-5" />
       </button>
-      {open && createPortal(<AdminPanel onClose={() => setOpen(false)} />, document.body)}
+      {open && createPortal(<AdminPanel onClose={() => setOpen(false)} />, panelTarget)}
     </>
   )
 }
@@ -1072,10 +1074,10 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-[200] backdrop-blur-md bg-black/25 dark:bg-black/50 text-[#123321] dark:text-white"
+      className="absolute inset-0 z-[10] backdrop-blur-md bg-black/25 dark:bg-black/50 text-[#123321] dark:text-white"
       style={{ paddingTop: "max(8px, env(safe-area-inset-top))", paddingBottom: "max(8px, env(safe-area-inset-bottom))" }}
     >
-      <div className="mx-2 sm:mx-auto max-w-md h-full flex flex-col rounded-3xl animate-fade-in shadow-2xl border border-white/40 dark:border-white/10 bg-[#f1f4f1]/95 dark:bg-[#0b0f14]/95 overflow-hidden">
+      <div className="mx-2 sm:mx-auto max-w-2xl h-full flex flex-col rounded-3xl animate-fade-in shadow-2xl border border-white/40 dark:border-white/10 bg-[#f1f4f1]/95 dark:bg-[#0b0f14]/95 overflow-hidden">
         {/* header */}
         <div className="shrink-0 px-4 pt-3.5 pb-2.5">
           <div className="flex items-center justify-between gap-2">
@@ -1090,7 +1092,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                 </button>
               )}
             </div>
-            <button onClick={close} aria-label="Back" className={`d-pad-btn h-10 w-10 rounded-full flex items-center justify-center ${glass}`}><X className="h-5 w-5" /></button>
+            <button onClick={close} aria-label="Back" className={`panel-inner-close d-pad-btn h-10 w-10 rounded-full flex items-center justify-center ${glass}`}><X className="h-5 w-5" /></button>
           </div>
           <div className="flex gap-1.5 mt-2.5 overflow-x-auto -mx-4 px-4 [scrollbar-width:none]">
             {TABS.map((t) => (

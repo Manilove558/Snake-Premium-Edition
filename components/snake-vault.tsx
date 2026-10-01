@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
+import { usePanelState, usePanelTarget } from "./panel-host"
 import { Vault, ChevronLeft, Check, Lock, Crown } from "lucide-react"
 import { useStore, useCatalog, equip, owns, isVip, type StoreItem } from "@/lib/store"
 import { boardSvg } from "@/lib/skin-preview"
@@ -29,7 +30,8 @@ export function SnakeVault() {
   const st = useStore()
   const { user } = useAuthUser()
   const catalog = useCatalog()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = usePanelState("VAULT")
+  const panelTarget = usePanelTarget()
   const [tab, setTab] = useState<Slot>("skin")
   const [msg, setMsg] = useState("")
   const vip = isVip(st)
@@ -54,19 +56,19 @@ export function SnakeVault() {
 
   return (
     <>
-      <button aria-label="Vault" onClick={() => setOpen(true)} className="d-pad-btn inline-flex items-center justify-center h-10 w-10 rounded-full hover:bg-accent hover:text-accent-foreground">
+      <button aria-label="Vault" onClick={() => setOpen(true)} className="d-pad-btn inline-flex items-center justify-center h-12 w-12 rounded-full hover:bg-accent hover:text-accent-foreground">
         <Vault className="h-5 w-5" />
       </button>
       {open && createPortal(
-        <div className="fixed inset-0 z-[100] overflow-y-auto overscroll-contain backdrop-blur-md bg-black/25 dark:bg-black/50 text-[#123321] dark:text-white"
+        <div className="absolute inset-0 z-[10] overflow-y-auto overscroll-contain backdrop-blur-md bg-black/25 dark:bg-black/50 text-[#123321] dark:text-white"
           style={{ paddingTop: "max(12px, env(safe-area-inset-top))", paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
-          <div className="relative mx-3 sm:mx-auto max-w-md min-h-[calc(100%-0px)] rounded-3xl px-3.5 pt-4 pb-8 animate-fade-in shadow-2xl border border-white/40 dark:border-white/10 bg-[#f1f4f1]/95 dark:bg-[#0b0f14]/95">
+          <div className="relative mx-2 sm:mx-auto max-w-xl min-h-[calc(100%-0px)] rounded-3xl px-3.5 pt-3 pb-6 animate-fade-in shadow-2xl border border-white/40 dark:border-white/10 bg-[#f1f4f1]/95 dark:bg-[#0b0f14]/95">
             <div className="flex items-center justify-between">
               <div className="flex items-baseline gap-2">
                 <h2 className="text-2xl leading-7 font-bold text-emerald-500">Vault</h2>
                 <span className="text-[10px] tracking-[.15em] text-muted-foreground uppercase">Your collection</span>
               </div>
-              <button aria-label="Back" onClick={close} className={`d-pad-btn h-9 w-9 rounded-full flex items-center justify-center ${glass}`}><ChevronLeft className="h-5 w-5" /></button>
+              <button aria-label="Back" onClick={close} className={`panel-inner-close d-pad-btn h-12 w-12 rounded-full flex items-center justify-center ${glass}`}><ChevronLeft className="h-5 w-5" /></button>
             </div>
 
             {/* Equipped — always on top, one compact row */}
@@ -127,7 +129,7 @@ export function SnakeVault() {
             )}
           </div>
           {msg && <div className="fixed z-[120] left-1/2 -translate-x-1/2 bottom-[max(24px,env(safe-area-inset-bottom))] rounded-full px-5 py-2.5 text-sm font-semibold text-white bg-emerald-500 shadow-lg shadow-emerald-500/40">{msg}</div>}
-        </div>, document.body)}
+        </div>, panelTarget)}
     </>
   )
 }

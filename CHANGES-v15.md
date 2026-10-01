@@ -140,3 +140,11 @@
 ## v15.9.3 — HOST icon
 - Multiplayer lobby me HOST badge ke bagal ka Crown icon hata kar tumhara `server.png` (cloud + server) icon laga diya (public/host-icon.png, 96px). Icon badge ke amber rang me hi rangta hai, light/dark dono me saaf dikhta hai.
 - Files: components/multiplayer-lobby.tsx, public/host-icon.png (naya).
+
+## v16 — Permanent landscape + naya Home UI (Snake-Game_Home-All-Buttons-Mock_v2.html)
+- Android: AndroidManifest `screenOrientation="sensorLandscape"`; MainActivity me notch (shortEdges). PWA manifest landscape; portrait touch par "Rotate your phone" (components/rotate-hint.tsx).
+- Home 3-column: LEFT (future slots / ranked leaderboard / in-game D-pad ya swipe pad) · CENTER (logo + map pill + max square board) · RIGHT (icons, Score/Best, Options grid, pinned Start).
+- Fixed px nahi (flex, clamp, container units); board 1:1; safe-area insets har jagah (popups, multiplayer overlays, invite popup); touch targets >= 48px; chhoti screen par panels scroll.
+- Naye popups: components/home-popups.tsx (Rank, Map, Sound, Settings, Controls).
+- `SHOW_FUTURE_STRIP` (snake-game.tsx) false = dashed placeholders band.
+- Room-invite popup (InvitePopup) naye layout me bhi jura hua hai.

@@ -1,20 +1,8 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Moon, Sun, Pause, Play, X, Settings, Volume2, VolumeX } from "lucide-react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
+import { createPortal } from "react-dom"
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Pause, Play, X, Settings, Trophy, Map as MapIcon, Shuffle, Grid3x3, Users } from "lucide-react"
 // Import the sound manager at the top of the file
 import { useSoundManager } from "./sound-manager"
 import MultiplayerLobby from "./multiplayer-lobby"
@@ -30,7 +18,12 @@ import { SnakeFriends } from "./snake-friends"
 import { useStore, equippedItem, loadCatalog, earnCoins, earnGems, setBest } from "@/lib/store"
 import { shapePath } from "@/lib/shapes"
 import MultiplayerBattle from "./multiplayer-battle"
-import { HomeLeaderboard } from "./home-leaderboard"
+import { RankPopup, MapPopup, SettingsPopup } from "./home-popups"
+import { RotateHint } from "./rotate-hint"
+import { PanelHostContext, type ViewId } from "./panel-host"
+
+// Left strip on the home screen keeps room for future buttons. Set to false to hide the dashed placeholders.
+const SHOW_FUTURE_STRIP = true
 import InvitePopup from "./invite-popup"
 import { joinRoom, leaveRoom } from "@/lib/multiplayer"
 import { useDisplayName } from "@/lib/profile-name"
@@ -528,6 +521,10 @@ export default function SnakeGame() {
   // Multiplayer views: lobby -> battle. Single-player modes are untouched.
   const [mpView, setMpView] = useState<"none" | "lobby" | "battle">("none")
   const [mpSession, setMpSession] = useState<{ code: string; playerId: string } | null>(null)
+  // Which panel the central frame shows. Everything (Store, Vault, Settings, Rank, Map, Multiplayer, ...) renders INSIDE the frame.
+  const [activeView, setActiveView] = useState<ViewId>("GAME")
+  // The empty layer inside the central frame that panels portal into
+  const [frameEl, setFrameEl] = useState<HTMLElement | null>(null)
   const profileName = useDisplayName(user)
 
   // Accept a room invite: leave any current room, join the invited room's lobby.
@@ -556,6 +553,7 @@ export default function SnakeGame() {
       await removeRoomInvite(myUid, inv.roomCode)
       setMpSession({ code: inv.roomCode, playerId: res.playerId })
       setMpView("lobby")
+      setActiveView("MULTIPLAYER")
       return null
     } catch (e) {
       return e instanceof Error ? e.message : "Could not join the room."
@@ -710,6 +708,7 @@ export default function SnakeGame() {
 
     // Hide the mode preview while the countdown / game runs
     setModePreviewActive(false)
+    setActiveView("GAME")
 
     // Set up the new game's board RIGHT NOW so the 3s countdown already shows
     // the newly selected mode — not the previous game's stale board.
@@ -1970,358 +1969,281 @@ export default function SnakeGame() {
     }
   }, [])
 
-  // Ranked leaderboard shows on the multiplayer home — also on the game-over screen once the player swiped to the ranked mode
-  const showRankedBoard = gameMode === GAME_MODES.MULTIPLAYER && (!gameStarted || gameOver)
   // After a game ends the button says "Play Again" only until the player swipes to pick a mode; then it is a fresh "Start Game"
   const swipedAfterGameOver = gameOver && modePreviewActive
 
+  // While a multiplayer room is open the lobby is the "home" view of the frame: closing any other panel returns to it
+  const shownView: ViewId = activeView === "GAME" && mpView === "lobby" ? "MULTIPLAYER" : activeView
+  const panelCtx = { activeView: shownView, setActiveView, frame: frameEl }
+  const openLobby = () => { triggerHaptic(15); setMpView("lobby"); setActiveView("MULTIPLAYER") }
+  // Frame close (x): use Android-back history entry when the panel pushed one, otherwise just switch view
+  const closeFrame = () => {
+    triggerHaptic(15)
+    const hs = typeof history !== "undefined" ? (history.state as Record<string, unknown> | null) : null
+    if (hs && (hs.store || hs.vault || hs.profile || hs.admin || hs.popup || hs.friends)) history.back()
+    else setActiveView("GAME")
+  }
+
+  // ---- Landscape layout (game is locked to landscape) ----
+  const playing = gameStarted && !gameOver
+  const startLabel = gameOver && !swipedAfterGameOver ? "Play Again" : "Start Game"
+  const glassBox = "bg-white/70 dark:bg-white/5 border border-black/5 dark:border-white/10"
+  const dpadBtn = `${glassBox} d-pad-btn w-full h-full min-h-[48px] min-w-[48px] rounded-2xl flex items-center justify-center active:scale-95 transition-transform`
+  const optBtn = (label: string, icon: React.ReactNode, onClick: () => void, variant: "on" | "off" | "gold" | "green" = "off") => (
+    <button
+      key={label}
+      aria-label={label}
+      onClick={() => { triggerHaptic(15); onClick() }}
+      className={`d-pad-btn min-h-[48px] rounded-xl border text-[11px] font-bold px-1 py-1.5 flex flex-col items-center justify-center gap-0.5 active:scale-95 transition-transform ${
+        variant === "gold" ? "border-amber-400 bg-amber-400/15 text-amber-600 dark:text-amber-300"
+        : variant === "green" || variant === "on" ? "border-emerald-500 bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
+        : `${glassBox} text-[#123321] dark:text-[#eafff3]`
+      }`}
+    >
+      {icon}
+      <span className="leading-none">{label}</span>
+    </button>
+  )
+  const ic = "h-[18px] w-[18px]"
+
   return (
-    <Card className="w-full max-w-md mx-auto border-0 shadow-none bg-transparent premium-surface animate-fade-in">
+    <PanelHostContext.Provider value={panelCtx}>
+    <div className="land-root bg-gradient-to-br from-[#f2f6f3] to-[#e2f0e7] dark:from-[#0d1f16] dark:to-[#123321] text-[#123321] dark:text-[#eafff3] animate-fade-in">
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[300] rounded-2xl px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-amber-500 to-amber-400 shadow-xl">
           {toast}
         </div>
       )}
       <SessionGuard />
-      {/* Ranked leaderboard: lives in the space above the header. Shown with a smooth
-          animation only on the multiplayer (ranked) mode home; hides when any other
-          mode is picked or a game starts. */}
-      <div
-        aria-hidden={!(showRankedBoard)}
-        className="overflow-hidden transition-all duration-500 ease-in-out"
-        style={{
-          maxHeight: showRankedBoard ? 260 : 0,
-          opacity: showRankedBoard ? 1 : 0,
-          marginBottom: showRankedBoard ? 8 : 0,
-        }}
-      >
-        <HomeLeaderboard />
-      </div>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-2xl font-bold tracking-tight bg-gradient-to-r from-emerald-500 to-emerald-300 dark:from-emerald-400 dark:to-emerald-200 bg-clip-text text-transparent">
-              Snake
-            </CardTitle>
-            <p className="text-[11px] uppercase tracking-widest text-muted-foreground -mt-0.5">Premium Edition</p>
-          </div>
-          <div className="flex items-center gap-1">
-            <SnakeProfile />
-            <SnakeFriends />
-            <MailboxButton />
-            <SnakeVault />
-            <SnakeStore />
-            <AdminButton />
-          <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                triggerHaptic(15)
-                setDarkMode(!darkMode)
-              }}
-              className="rounded-full d-pad-btn"
-              aria-label="Toggle theme"
-            >
-              {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </Button>
-          </div>
-        </div>
+      <RotateHint />
 
-        {/* Score strip */}
-        <div className="grid grid-cols-2 gap-2 mt-3">
-          <div className="rounded-2xl bg-white/70 dark:bg-white/5 backdrop-blur-sm border border-black/5 dark:border-white/10 px-4 py-2 shadow-sm">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Score</div>
-            <div className="text-xl font-bold tabular-nums">{score}</div>
+      {/* LEFT column: future buttons in a vertical row — always visible (home, classic game, multiplayer / ranked battle) */}
+      {SHOW_FUTURE_STRIP && (
+        <aside className="shrink-0 w-[clamp(64px,9vw,84px)] min-h-0 overflow-y-auto overscroll-contain flex flex-col items-center justify-center gap-2 p-2 border-r border-dashed border-emerald-500/30 bg-emerald-500/[0.04]">
+          <div className="text-[7px] tracking-[.12em] font-bold opacity-50 text-center leading-tight">FUTURE<br />BUTTONS</div>
+          <div className="flex flex-col items-center gap-1.5">
+            {[0, 1, 2].map((i) => <div key={i} aria-hidden className="h-12 w-12 rounded-xl border-[1.5px] border-dashed border-emerald-500/60 bg-emerald-500/[0.08]" />)}
           </div>
-          <div className="rounded-2xl bg-white/70 dark:bg-white/5 backdrop-blur-sm border border-black/5 dark:border-white/10 px-4 py-2 shadow-sm">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Best</div>
-            <div className="text-xl font-bold tabular-nums">{highScore}</div>
+        </aside>
+      )}
+
+      {/* CENTER: logo + current map, the square board (max size), swipe hint */}
+      <section className="relative flex-1 min-w-0 min-h-0 flex flex-col gap-1 p-2 overflow-hidden">
+        {!playing && (
+          <div className="shrink-0 flex items-center gap-2.5">
+            <div className="leading-none">
+              <div className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-emerald-500 to-emerald-300 bg-clip-text text-transparent">Snake <span>PREMIUM</span></div>
+              <div className="text-[8px] tracking-[.3em] uppercase opacity-50 font-semibold">Edition</div>
+            </div>
           </div>
-        </div>
-
-        {/* Settings chips */}
-        <div className="flex items-center justify-center gap-1.5 mt-3 flex-wrap">
-          {(
-            [
-              { label: "Teleport", value: teleportEnabled, toggle: () => setTeleportEnabled(!teleportEnabled) },
-              { label: "Grid", value: gridVisible, toggle: () => setGridVisible(!gridVisible) },
-              {
-                label: "Sound",
-                value: soundEnabled,
-                toggle: () => setSoundEnabled(!soundEnabled),
-                icon: soundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />,
-              },
-            ] as { label: string; value: boolean; toggle: () => void; icon?: React.ReactNode }[]
-          ).map((chip) => (
-            <button
-              key={chip.label}
-              aria-label={chip.label}
-              onClick={() => {
-                triggerHaptic(15)
-                chip.toggle()
-              }}
-              className={`d-pad-btn text-[11px] font-medium px-3 py-1.5 rounded-full border transition-colors ${
-                chip.value
-                  ? "bg-emerald-500 border-emerald-500 text-white shadow-sm shadow-emerald-500/30"
-                  : "bg-white/60 dark:bg-white/5 border-black/10 dark:border-white/10 text-muted-foreground"
-              }`}
-            >
-              {chip.icon ?? chip.label}
-            </button>
-          ))}
-          {/* Control settings */}
-          <Dialog>
-            <DialogTrigger asChild>
-              <button
-                aria-label="Control settings"
-                onClick={() => {
-                  if (isVibrationSupported()) triggerHaptic(15)
-                }}
-                className="d-pad-btn p-2 rounded-full border transition-colors bg-white/60 dark:bg-white/5 border-black/10 dark:border-white/10 text-muted-foreground"
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[340px]">
-              <DialogHeader>
-                <DialogTitle>Controls</DialogTitle>
-                <DialogDescription>Choose how you steer the snake.</DialogDescription>
-              </DialogHeader>
-              <RadioGroup
-                value={controlMode}
-                onValueChange={(value) => {
-                  if (isVibrationSupported()) triggerHaptic(15)
-                  setControlMode(value as "buttons" | "swipe")
-                }}
-                className="grid gap-2"
-              >
-                {[
-                  { value: "buttons", title: "Buttons", hint: "On-screen D-pad buttons" },
-                  { value: "swipe", title: "Swipe", hint: "Swipe on the game to steer" },
-                ].map((option) => (
-                  <Label
-                    key={option.value}
-                    htmlFor={`control-${option.value}`}
-                    className={`flex items-center gap-3 rounded-2xl border px-4 py-3 cursor-pointer transition-colors ${
-                      controlMode === option.value
-                        ? "border-emerald-500 bg-emerald-500/10"
-                        : "border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5"
-                    }`}
-                  >
-                    <RadioGroupItem value={option.value} id={`control-${option.value}`} />
-                    <span>
-                      <span className="block text-sm font-medium">{option.title}</span>
-                      <span className="block text-xs text-muted-foreground">{option.hint}</span>
-                    </span>
-                  </Label>
-                ))}
-              </RadioGroup>
-              {/* Haptic feedback toggle */}
-              <div className="flex items-center justify-between rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 px-4 py-3 mt-2">
-                <Label htmlFor="haptic-switch" className="cursor-pointer">
-                  <span className="block text-sm font-medium">Haptic feedback</span>
-                  <span className="block text-xs text-muted-foreground">
-                    {mounted && !isVibrationSupported() ? "Not supported on this device" : "Vibrate on touch"}
-                  </span>
-                </Label>
-                <Switch
-                  id="haptic-switch"
-                  checked={hapticEnabled}
-                  disabled={mounted && !isVibrationSupported()}
-                  onCheckedChange={(checked) => {
-                    setHapticEnabled(checked)
-                    // Test vibration when turning on (triggerHaptic would see the old state)
-                    if (checked && isVibrationSupported()) {
-                      try {
-                        navigator.vibrate(15)
-                      } catch {
-                        // ignore
-                      }
-                    }
-                  }}
-                />
-              </div>
-              {/* Volume */}
-              <div className="flex items-center justify-between rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 px-4 py-3 mt-2">
-                <Label className="cursor-pointer">
-                  <span className="block text-sm font-medium">Volume</span>
-                  <span className="block text-xs text-muted-foreground">Game sound volume</span>
-                </Label>
-                <div className="flex items-center gap-2">
-                  {volume === 0 || !soundEnabled ? (
-                    <VolumeX className="h-4 w-4 text-muted-foreground shrink-0" />
-                  ) : (
-                    <Volume2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                  )}
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={Math.round(volume * 100)}
-                    onChange={(e) => setVolume(Number(e.target.value) / 100)}
-                    aria-label="Game volume"
-                    className="w-24 accent-emerald-500 cursor-pointer"
-                  />
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </div>
-
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col items-center gap-4">
-          {/* Mode swipe area: canvas + start/game-over panel — swipe anywhere here to change mode */}
-          <div ref={modeSwipeAreaRef} className="flex flex-col items-center gap-4 w-full">
+        )}
+        {/* Swipe here to change mode. The inner square = min(width, height) of this area, so the board always fills the free space 1:1. */}
+        <div ref={modeSwipeAreaRef} className="flex-1 min-h-0 min-w-0 flex items-center justify-center" style={{ containerType: "size" }}>
           <div
             ref={canvasWrapperRef}
-            className="rounded-2xl overflow-hidden premium-glow border border-black/10 dark:border-white/10 max-w-full"
+            className="rounded-2xl overflow-hidden premium-glow border border-black/10 dark:border-white/10"
+            style={{ width: "min(100cqw, 100cqh)", aspectRatio: "1 / 1" }}
           >
             <canvas
               ref={canvasRef}
               width={GRID_WIDTH * CELL_SIZE}
               height={GRID_HEIGHT * CELL_SIZE}
-              className="block w-full h-auto max-w-[340px] touch-none"
+              className="block w-full h-full touch-none"
               style={{ imageRendering: "auto" }}
             />
           </div>
+        </div>
+        {!playing && <div className="shrink-0 text-center text-[10px] opacity-50">Swipe ← → on the game to change mode</div>}
 
-          {!gameStarted || gameOver ? (
-            <div className="flex flex-col gap-3 w-full">
-              {/* Mode changes by swiping on the game canvas above — the preview is drawn on it */}
-              {gameOver && (
-                <div className="text-[11px] text-center text-muted-foreground">
-                  Swipe ← → on the game to change mode
+        {/* Panel layer: Store / Vault / Settings / Rank / Map / Profile / Friends / Mailbox / Admin / Multiplayer render in here */}
+        <div ref={setFrameEl} className={`panel-layer absolute inset-0 z-20 overflow-hidden rounded-2xl ${shownView === "GAME" ? "hidden" : ""}`} />
+        {/* Close (x) at the top-right of the frame -> back to the game view (the lobby has its own Leave / Close) */}
+        {shownView !== "GAME" && shownView !== "MULTIPLAYER" && (
+          <button
+            aria-label="Close"
+            onClick={closeFrame}
+            className={`${glassBox} d-pad-btn absolute top-2 right-2 z-30 h-10 w-10 rounded-full flex items-center justify-center shadow-md active:scale-90 transition-transform`}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
+      </section>
+
+      {/* RIGHT panel: icons, score, options (scrolls when the screen is short) + pinned Start button */}
+      <aside className="shrink-0 w-[clamp(184px,27vw,250px)] min-h-0 flex flex-col border-l border-black/5 dark:border-white/10 bg-white/40 dark:bg-white/[0.02]">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 flex flex-col gap-2">
+          {/* header icons — kept mounted while playing (hidden) so their listeners keep running */}
+          <div
+            className={`${playing ? "hidden" : "grid"} justify-items-center gap-1.5 [&>button]:border [&>button]:border-black/10 dark:[&>button]:border-white/10 [&>button]:bg-white/60 dark:[&>button]:bg-white/5`}
+            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(48px, 1fr))" }}
+          >
+            <SnakeProfile />
+            <SnakeFriends />
+            <MailboxButton />
+            <SnakeStore />
+            <button
+              aria-label="Settings"
+              title="Settings"
+              onClick={() => { triggerHaptic(15); setActiveView("SETTINGS") }}
+              className="d-pad-btn inline-flex items-center justify-center h-12 w-12 rounded-full hover:bg-accent hover:text-accent-foreground"
+            >
+              <Settings className="h-5 w-5" />
+            </button>
+            <AdminButton />
+            <SnakeVault />
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5">
+            <div className="rounded-xl bg-white/70 dark:bg-white/[0.06] border border-black/5 dark:border-white/10 px-2.5 py-1 text-center">
+              <div className="text-[8px] uppercase tracking-wider opacity-50 font-semibold">Score</div>
+              <div className="text-base font-extrabold tabular-nums leading-tight">{score}</div>
+            </div>
+            <div className="rounded-xl bg-white/70 dark:bg-white/[0.06] border border-black/5 dark:border-white/10 px-2.5 py-1 text-center">
+              <div className="text-[8px] uppercase tracking-wider opacity-50 font-semibold">Best</div>
+              <div className="text-base font-extrabold tabular-nums leading-tight">{highScore}</div>
+            </div>
+          </div>
+
+          {playing ? (
+            <>
+              {/* Steering controls now live on the right */}
+              {controlMode !== "swipe" && (
+                <div className="flex-1 min-h-0 min-w-0 flex items-center justify-center" style={{ containerType: "size" }}>
+                  <div className="grid gap-1.5" style={{ width: "min(100cqw, 100cqh)", aspectRatio: "1 / 1", gridTemplateColumns: "repeat(3, 1fr)", gridTemplateRows: "repeat(3, 1fr)" }}>
+                    <div style={{ gridColumn: 2, gridRow: 1 }}><button aria-label="Up" onClick={() => handleDirectionClick(DIRECTIONS.UP)} className={dpadBtn}><ArrowUp className="h-6 w-6" /></button></div>
+                    <div style={{ gridColumn: 1, gridRow: 2 }}><button aria-label="Left" onClick={() => handleDirectionClick(DIRECTIONS.LEFT)} className={dpadBtn}><ArrowLeft className="h-6 w-6" /></button></div>
+                    <div style={{ gridColumn: 3, gridRow: 2 }}><button aria-label="Right" onClick={() => handleDirectionClick(DIRECTIONS.RIGHT)} className={dpadBtn}><ArrowRight className="h-6 w-6" /></button></div>
+                    <div style={{ gridColumn: 2, gridRow: 3 }}><button aria-label="Down" onClick={() => handleDirectionClick(DIRECTIONS.DOWN)} className={dpadBtn}><ArrowDown className="h-6 w-6" /></button></div>
+                  </div>
                 </div>
               )}
-
-              <Button
-                onClick={() => (gameMode === GAME_MODES.MULTIPLAYER ? setMpView("lobby") : initGame())}
-                className="h-12 rounded-xl text-base font-semibold bg-gradient-to-r from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 text-white shadow-lg shadow-emerald-500/30 active:animate-pop"
-              >
-                {gameOver && !swipedAfterGameOver ? "Play Again" : "Start Game"}
-              </Button>
-
+              {controlMode !== "buttons" && (
+                <div
+                  ref={swipeAreaRef}
+                  id="swipe-area"
+                  className={`${glassBox} w-full flex-1 min-h-[96px] rounded-2xl relative overflow-hidden`}
+                  style={{ touchAction: "none" }}
+                >
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground pointer-events-none">
+                    <ArrowUp className="h-4 w-4 opacity-50" />
+                    <div className="flex gap-2 items-center opacity-50">
+                      <ArrowLeft className="h-4 w-4" />
+                      <span className="text-xs font-medium">Swipe to steer</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </div>
+                    <ArrowDown className="h-4 w-4 opacity-50" />
+                  </div>
+                </div>
+              )}
+              {/* One compact split button: Pause | Exit (icons only) */}
+              <div className={`${glassBox} shrink-0 flex h-11 w-full rounded-2xl overflow-hidden`}>
+                <button aria-label={isPaused ? "Resume" : "Pause"} title={isPaused ? "Resume" : "Pause"} onClick={togglePause} className="d-pad-btn flex-1 flex items-center justify-center active:bg-black/10 dark:active:bg-white/10">
+                  {isPaused ? <Play className="h-5 w-5" /> : <Pause className="h-5 w-5" />}
+                </button>
+                <div className="w-px my-2 bg-black/15 dark:bg-white/20" />
+                <button aria-label="Exit" title="Exit" onClick={exitGame} className="d-pad-btn flex-1 flex items-center justify-center text-red-500 active:bg-black/10 dark:active:bg-white/10">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
               {gameOver && !swipedAfterGameOver && (
-                <div className="text-center rounded-2xl bg-white/70 dark:bg-white/5 border border-black/5 dark:border-white/10 py-4 px-3">
-                  <div className="text-sm text-muted-foreground">Game Over</div>
-                  <div className="text-2xl font-bold mt-0.5">{score} pts</div>
+                <div className={`${glassBox} text-center rounded-2xl py-2 px-3`}>
+                  <div className="text-xs text-muted-foreground">Game Over</div>
+                  <div className="text-xl font-extrabold">{score} pts</div>
                   {gameMode === GAME_MODES.CAMPAIGN && campaignLevel === MAX_CAMPAIGN_LEVEL - 1 && score >= 5 && (
-                    <div className="text-emerald-500 font-medium mt-2 text-sm">🏆 You completed all 100 levels!</div>
+                    <div className="text-emerald-500 font-medium mt-1 text-xs">🏆 You completed all 100 levels!</div>
                   )}
                 </div>
               )}
-            </div>
-          ) : (
-            <div className="w-full">
-              {/* Pause / Exit controls */}
-              <div className="flex gap-2.5 w-full max-w-[220px] mx-auto mb-4">
-                <Button
-                  variant="outline"
-                  onClick={togglePause}
-                  className="flex-1 rounded-2xl bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10 d-pad-btn"
-                >
-                  {isPaused ? <Play className="h-4 w-4 mr-1.5" /> : <Pause className="h-4 w-4 mr-1.5" />}
-                  <span className="text-xs font-medium">{isPaused ? "Resume" : "Pause"}</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={exitGame}
-                  className="flex-1 rounded-2xl bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10 d-pad-btn"
-                >
-                  <X className="h-4 w-4 mr-1.5" />
-                  <span className="text-xs font-medium">Exit</span>
-                </Button>
+              <div className="text-[9px] tracking-[.2em] text-center opacity-45 font-bold">OPTIONS</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {optBtn("Rank", <Trophy className={ic} />, () => setActiveView("RANK"), "gold")}
+                {optBtn("Map", <MapIcon className={ic} />, () => setActiveView("MAP"), "green")}
+                {optBtn("Teleport", <Shuffle className={ic} />, () => setTeleportEnabled(!teleportEnabled), teleportEnabled ? "on" : "off")}
+                {optBtn("Grid", <Grid3x3 className={ic} />, () => setGridVisible(!gridVisible), gridVisible ? "on" : "off")}
               </div>
-
-              {/* Control buttons */}
-              {controlMode !== "swipe" && (
-              <div className="grid grid-cols-3 gap-2.5 w-full max-w-[220px] mx-auto mb-4">
-                <div className="col-start-2">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => handleDirectionClick(DIRECTIONS.UP)}
-                    className="w-full aspect-square rounded-2xl bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10 d-pad-btn"
-                  >
-                    <ArrowUp className="h-5 w-5" />
-                  </Button>
-                </div>
-                <div className="col-start-1 row-start-2">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => handleDirectionClick(DIRECTIONS.LEFT)}
-                    className="w-full aspect-square rounded-2xl bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10 d-pad-btn"
-                  >
-                    <ArrowLeft className="h-5 w-5" />
-                  </Button>
-                </div>
-                <div className="col-start-3 row-start-2">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => handleDirectionClick(DIRECTIONS.RIGHT)}
-                    className="w-full aspect-square rounded-2xl bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10 d-pad-btn"
-                  >
-                    <ArrowRight className="h-5 w-5" />
-                  </Button>
-                </div>
-                <div className="col-start-2 row-start-3">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => handleDirectionClick(DIRECTIONS.DOWN)}
-                    className="w-full aspect-square rounded-2xl bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10 d-pad-btn"
-                  >
-                    <ArrowDown className="h-5 w-5" />
-                  </Button>
-                </div>
-              </div>
-              )}
-
-              {/* Swipe area */}
-              {controlMode !== "buttons" && (
-              <div
-                ref={swipeAreaRef}
-                id="swipe-area"
-                className="w-full h-40 bg-gradient-to-br from-white/70 to-white/40 dark:from-white/5 dark:to-white/[0.02] border border-black/10 dark:border-white/10 rounded-2xl mt-2 relative overflow-hidden"
-                style={{ touchAction: "none" }}
-              >
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground pointer-events-none">
-                  <div className="flex gap-3 opacity-50">
-                    <ArrowUp className="h-4 w-4" />
-                  </div>
-                  <div className="flex gap-3 items-center opacity-50">
-                    <ArrowLeft className="h-4 w-4" />
-                    <span className="text-xs font-medium">Swipe to steer</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </div>
-                  <div className="flex gap-3 opacity-50">
-                    <ArrowDown className="h-4 w-4" />
-                  </div>
-                </div>
-              </div>
-              )}
-            </div>
+            </>
           )}
-          </div>
         </div>
-      </CardContent>
-      {mpView === "lobby" && (
-        <MultiplayerLobby
-          darkMode={darkMode}
-          onExit={() => {
-            setMpView("none")
-            setMpSession(null)
+        {!playing && (
+          <div className="shrink-0 p-2 pt-1" style={{ paddingBottom: "max(8px, 0px)" }}>
+            {/* Split button: Start | Multiplayer */}
+            <div className="flex h-[52px] w-full rounded-2xl overflow-hidden text-white bg-gradient-to-r from-emerald-500 to-emerald-400 shadow-lg shadow-emerald-500/40">
+              <button
+                aria-label={startLabel}
+                onClick={() => { triggerHaptic(15); mpView === "lobby" || gameMode === GAME_MODES.MULTIPLAYER ? openLobby() : initGame() }}
+                className="d-pad-btn flex-1 flex flex-col items-center justify-center gap-0.5 active:bg-white/25"
+              >
+                <Play className="h-5 w-5" />
+                <span className="text-[10px] font-extrabold leading-none">{gameOver && !swipedAfterGameOver ? "Play Again" : "Start"}</span>
+              </button>
+              <div className="w-px my-2 bg-white/50" />
+              <button
+                aria-label="Multiplayer"
+                onClick={openLobby}
+                className="d-pad-btn flex-1 flex flex-col items-center justify-center gap-0.5 active:bg-white/25"
+              >
+                <Users className="h-5 w-5" />
+                <span className="text-[10px] font-extrabold leading-none">Multiplayer</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </aside>
+
+      {activeView === "RANK" && <RankPopup onClose={() => setActiveView("GAME")} />}
+      {activeView === "MAP" && (
+        <MapPopup
+          modes={MODE_LIST.map((m) => ({ value: m.value, name: m.name, ...getModePreviewLayout(m.value) }))}
+          active={gameMode}
+          onPick={(v) => {
+            triggerHaptic(15)
+            setGameMode(v as typeof gameMode)
+            if (gameOver) setModePreviewActive(true)
+            setActiveView("GAME")
           }}
-          onBattleStart={(c, p) => {
-            setMpSession({ code: c, playerId: p })
-            setMpView("battle")
-          }}
-          initialCode={mpSession?.code}
-          initialPlayerId={mpSession?.playerId}
+          onClose={() => setActiveView("GAME")}
         />
+      )}
+      {activeView === "SETTINGS" && (
+        <SettingsPopup
+          soundEnabled={soundEnabled}
+          setSoundEnabled={setSoundEnabled}
+          volume={volume}
+          setVolume={setVolume}
+          darkMode={darkMode}
+          setDarkMode={setDarkMode}
+          controlMode={controlMode}
+          setControlMode={(m) => { triggerHaptic(15); setControlMode(m) }}
+          hapticEnabled={hapticEnabled}
+          setHapticEnabled={setHapticEnabled}
+          hapticSupported={!mounted || isVibrationSupported()}
+          onClose={() => setActiveView("GAME")}
+        />
+      )}
+
+      {/* Multiplayer lobby lives inside the central frame (stays mounted, hidden, while another panel is shown on top) */}
+      {mpView === "lobby" && frameEl && createPortal(
+        <div className={shownView === "MULTIPLAYER" ? "contents" : "hidden"}>
+          <MultiplayerLobby
+            darkMode={darkMode}
+            onExit={() => {
+              setMpView("none")
+              setMpSession(null)
+              setActiveView("GAME")
+            }}
+            onBattleStart={(c, p) => {
+              setMpSession({ code: c, playerId: p })
+              setMpView("battle")
+              setActiveView("GAME")
+            }}
+            initialCode={mpSession?.code}
+            initialPlayerId={mpSession?.playerId}
+          />
+        </div>,
+        frameEl,
       )}
       {mpView === "battle" && mpSession && (
         <MultiplayerBattle
@@ -2335,12 +2257,12 @@ export default function SnakeGame() {
             setMpView("none")
             setMpSession(null)
           }}
-          onBackToLobby={() => setMpView("lobby")}
+          onBackToLobby={() => { setMpView("lobby"); setActiveView("MULTIPLAYER") }}
         />
       )}
       {/* Room-invite notifications (signed-in players only) */}
       {user && <InvitePopup darkMode={darkMode} onAccept={handleInviteAccept} />}
-    </Card>
+    </div>
+    </PanelHostContext.Provider>
   )
 }
-

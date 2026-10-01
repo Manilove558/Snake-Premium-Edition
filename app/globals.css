@@ -176,3 +176,31 @@ body {
   transform: scale(0.9);
 }
 
+
+/* ---- Landscape-only app shell ---- */
+.land-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  /* notch / curved corners / navigation bar never cover the UI */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+}
+.rotate-hint { display: none; }
+/* touch devices held in portrait (browser / PWA; the Android app is locked to landscape) */
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate-hint { display: flex; }
+}
+
+/* ---- Central frame (in-frame panels) ---- */
+/* the frame's own close (x) replaces each panel's top-level close/back button */
+.panel-layer .panel-inner-close { display: none; }
+@keyframes panel-in {
+  from { opacity: 0; transform: scale(0.97) translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.panel-layer { animation: panel-in 0.18s ease-out; }

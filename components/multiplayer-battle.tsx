@@ -781,12 +781,18 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
         : `${k.victimName} crashed into themselves`
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center safe-area-pt safe-area-pb pr-[max(8px,env(safe-area-inset-right))] bg-black/60 backdrop-blur-sm p-2"
+      // keep the left "Future buttons" strip visible and usable next to the battle
+      style={{ left: "calc(env(safe-area-inset-left, 0px) + clamp(64px, 9vw, 84px) + 1px)" }}
+    >
       <div
-        className={`w-full max-w-[430px] rounded-3xl border p-4 shadow-2xl my-auto ${
+        className={`w-full h-full max-w-[940px] max-h-[520px] rounded-3xl border p-3 shadow-2xl flex gap-3 ${
           darkMode ? "bg-[#0d1f16] border-white/10 text-white" : "bg-white border-black/10 text-[#123321]"
         }`}
       >
+        {/* LEFT: header + arena (biggest square that fits) */}
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between mb-2">
           <div className="text-sm font-bold">
@@ -813,26 +819,9 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
           </div>
         )}
 
-        {/* Leaderboard */}
-        <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
-          {leaderboard.slice(0, 4).map((p, i) => (
-            <div
-              key={p.id}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] whitespace-nowrap ${
-                darkMode ? "bg-white/5" : "bg-black/5"
-              } ${p.id === playerId ? "ring-1 ring-emerald-500" : ""}`}
-            >
-              {i === 0 && <Crown className="w-3 h-3 text-amber-500" />}
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-              <span className="font-medium truncate max-w-[64px]">{p.vip && <VipCrown className="h-3 w-3" />}{p.name}</span>
-              <span className="font-bold">{p.score ?? 0}</span>
-              {!p.alive && <Skull className="w-3 h-3 opacity-60" />}
-            </div>
-          ))}
-        </div>
-
         {/* Arena */}
-        <div ref={arenaWrapRef} className="relative mx-auto" style={{ width: BW * CELL, maxWidth: "100%" }}>
+        <div className="flex-1 min-h-0 min-w-0 flex items-center justify-center" style={{ containerType: "size" }}>
+        <div ref={arenaWrapRef} className="relative" style={{ width: "min(100cqw, 100cqh)", aspectRatio: "1 / 1" }}>
           <canvas
             ref={canvasRef}
             width={BW * CELL}
@@ -865,8 +854,8 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
             </div>
           )}
           {phase === "ended" && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-2xl">
-              <div className="text-center px-6">
+            <div className="absolute inset-0 flex overflow-y-auto bg-black/60 rounded-2xl">
+              <div className="m-auto text-center px-3 py-2">
                 <Trophy className="w-10 h-10 text-amber-400 mx-auto mb-2" />
                 <div className="text-white font-bold text-lg">{winner ? `${winner.name} wins!` : "Battle over!"}</div>
                 <div className="text-white/70 text-xs mt-1">Scores</div>
@@ -938,10 +927,33 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
             </div>
           )}
         </div>
+        </div>
+
+        </div>
+
+        {/* RIGHT: scores, kill feed and the steering controls */}
+        <div className="shrink-0 w-[clamp(150px,28vw,230px)] min-h-0 flex flex-col gap-2">
+        {/* Leaderboard */}
+        <div className="shrink-0 flex flex-col gap-1">
+          {leaderboard.slice(0, 4).map((p, i) => (
+            <div
+              key={p.id}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] whitespace-nowrap ${
+                darkMode ? "bg-white/5" : "bg-black/5"
+              } ${p.id === playerId ? "ring-1 ring-emerald-500" : ""}`}
+            >
+              {i === 0 && <Crown className="w-3 h-3 text-amber-500" />}
+              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
+              <span className="font-medium truncate max-w-[96px]">{p.vip && <VipCrown className="h-3 w-3" />}{p.name}</span>
+              <span className="font-bold">{p.score ?? 0}</span>
+              {!p.alive && <Skull className="w-3 h-3 opacity-60" />}
+            </div>
+          ))}
+        </div>
 
         {/* Kill feed */}
-        <div className="mt-2 min-h-[28px] flex flex-col gap-0.5">
-          {kills.slice(-3).map((k) => (
+        <div className="shrink-0 min-h-0 flex flex-col gap-0.5">
+          {kills.slice(-2).map((k) => (
             <div key={k.key} className={`text-[11px] ${darkMode ? "text-white/60" : "text-black/60"}`}>
               💀 {killText(k)}
             </div>
@@ -950,8 +962,8 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
 
         {/* D-pad — same design as single-player, shown as soon as Start Battle is tapped */}
         {(phase === "countdown" || (phase === "playing" && aliveRef.current)) && controlMode !== "swipe" && (
-          <div className="mt-1 flex justify-center">
-            <div className="grid grid-cols-3 gap-2.5 w-full max-w-[220px] mx-auto">
+          <div className="flex-1 min-h-0 min-w-0 flex items-center justify-center" style={{ containerType: "size" }}>
+            <div className="grid grid-cols-3 gap-2" style={{ width: "min(100cqw, 100cqh)" }}>
               <div className="col-start-2">
                 <Button
                   variant="outline"
@@ -1006,7 +1018,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
         {controlMode !== "buttons" && (phase === "countdown" || (phase === "playing" && aliveRef.current)) && (
           <div
             ref={swipePadRef}
-            className={`w-full h-40 rounded-2xl mt-2 relative overflow-hidden border bg-gradient-to-br ${
+            className={`w-full flex-1 min-h-[96px] rounded-2xl relative overflow-hidden border bg-gradient-to-br ${
               darkMode
                 ? "from-white/5 to-white/[0.02] border-white/10"
                 : "from-white/70 to-white/40 border-black/10"
@@ -1032,6 +1044,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   )

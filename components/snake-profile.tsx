@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
+import { usePanelState, usePanelTarget } from "./panel-host"
 import { User as UserIcon, X, LogOut, Cloud, CloudOff, Loader2, Copy, Check, Pencil } from "lucide-react"
 import { useAuthUser, signInWithGoogle, signOutUser } from "@/lib/auth"
 import { attachAccount, detachAccount, useSyncStatus } from "@/lib/cloud"
@@ -19,7 +20,8 @@ export function SnakeProfile() {
   const { user, ready } = useAuthUser()
   const st = useStore()
   const { status, lastSaved } = useSyncStatus()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = usePanelState("PROFILE")
+  const panelTarget = usePanelTarget()
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
   const [confirmOut, setConfirmOut] = useState(false)
@@ -83,16 +85,16 @@ export function SnakeProfile() {
 
   return (
     <>
-      <button aria-label="Profile" onClick={() => setOpen(true)} className="d-pad-btn inline-flex items-center justify-center h-10 w-10 rounded-full hover:bg-accent hover:text-accent-foreground">
+      <button aria-label="Profile" onClick={() => setOpen(true)} className="d-pad-btn inline-flex items-center justify-center h-12 w-12 rounded-full hover:bg-accent hover:text-accent-foreground">
         {user?.photoURL || resolveAvatar(st.equipped.avatar, isVip(st)) ? <PlayerAvatar photo={user?.photoURL} avatarId={st.equipped.avatar} vip={isVip(st)} size={28} /> : <UserIcon className="h-5 w-5" />}
       </button>
       {open && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center backdrop-blur-md bg-black/30 dark:bg-black/55" onClick={close}>
-          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-[#f1f4f1] dark:bg-[#0b0f14] border border-black/5 dark:border-white/10 p-5 shadow-2xl animate-fade-in text-[#123321] dark:text-white"
+        <div className="absolute inset-0 z-[10] flex items-center justify-center overflow-y-auto backdrop-blur-md bg-black/30 dark:bg-black/55" onClick={close}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md max-h-full overflow-y-auto rounded-3xl bg-[#f1f4f1] dark:bg-[#0b0f14] border border-black/5 dark:border-white/10 p-4 shadow-2xl animate-fade-in text-[#123321] dark:text-white"
             style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))" }}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xl font-bold text-emerald-500">Profile</h3>
-              <button aria-label="Close" onClick={close} className={`d-pad-btn h-9 w-9 rounded-full flex items-center justify-center ${glass}`}><X className="h-4 w-4" /></button>
+              <button aria-label="Close" onClick={close} className={`panel-inner-close d-pad-btn h-12 w-12 rounded-full flex items-center justify-center ${glass}`}><X className="h-4 w-4" /></button>
             </div>
 
             {!ready ? <div className="py-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-emerald-500" /></div> : user ? (
@@ -171,7 +173,7 @@ export function SnakeProfile() {
               </>
             )}
           </div>
-        </div>, document.body)}
+        </div>, panelTarget)}
     </>
   )
 }

@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
+import { usePanelState, usePanelTarget } from "./panel-host"
 import { ShoppingBag, ChevronLeft, Check, Plus, X, Lock, Crown, Gift } from "lucide-react"
 import { StoreItem, useStore, useCatalog, buy, equip, owns, isVip, vipDaysLeft, GEM_PACKS, COIN_PACKS, CURRENCY_SYMBOL, TEST_MODE, buyGemPack, buyCoinPack, claimVipDaily, vipDailyClaimed, VIP_DAILY, grantBlocker, grantAfterPurchaseItem, grantAfterPurchaseGems, isLiveNow, useCategories, type Kind } from "@/lib/store"
 import { billingMode, skuForItem, skuForGemPack, usePlayPrices, purchaseSku, logPurchase } from "@/lib/billing"
@@ -28,7 +29,8 @@ const priceText = (it: StoreItem) => (it.currency === "inr" ? `${CURRENCY_SYMBOL
 export function SnakeStore() {
   const st = useStore()
   const { user } = useAuthUser()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = usePanelState("STORE")
+  const panelTarget = usePanelTarget()
   const [tab, setTab] = useState<Tab>("skins")
   const [cat, setCat] = useState("all")
   const cats = useCategories()
@@ -124,7 +126,7 @@ export function SnakeStore() {
     const vipRunning = it.kind === "vip" && isVip(st)
     const text = on ? "Equipped" : locked ? "VIP only" : ownedNow && equippable(it.kind) ? "Equip" : it.kind === "vip" && isVip(st) ? `Active · ${vipDaysLeft(st)}d left` : it.vipOnly && it.price === 0 ? "Unlock" : it.price === 0 ? "FREE" : priceTextFor(it)
     return (
-      <div className={`${wide ? "min-w-[68%] snap-start" : ""} rounded-2xl p-2 flex flex-col ${glass} ${on ? "ring-2 ring-emerald-500 shadow-emerald-500/30" : ""}`}>
+      <div className={`${wide ? "shrink-0 w-[calc((100%-1rem)/3)] snap-start" : "min-w-0"} rounded-2xl p-1.5 flex flex-col ${glass} ${on ? "ring-2 ring-emerald-500 shadow-emerald-500/30" : ""}`}>
         <div className="relative w-full aspect-[3/2] rounded-xl overflow-hidden border border-black/10 dark:border-white/10">
           {it.kind === "avatar"
             ? <div className={`absolute inset-0 flex items-center justify-center bg-black/5 dark:bg-white/5 ${locked ? "opacity-60" : ""}`}><PlayerAvatar photo={user?.photoURL} avatarId={it.id} vip size={64} ring={false} tapToPlay /></div>
@@ -132,12 +134,12 @@ export function SnakeStore() {
           {it.vipOnly && <span className="absolute top-1 left-1 inline-flex items-center gap-0.5 rounded-full bg-amber-400 text-[#3b2a00] text-[9px] font-bold px-1.5 py-0.5"><Crown className="h-2.5 w-2.5" />VIP</span>}
           {locked && <span className="absolute inset-0 flex items-center justify-center"><Lock className="h-6 w-6 text-white drop-shadow" /></span>}
         </div>
-        <div className="mt-2 text-center">
-          <div className="text-[13px] font-semibold leading-tight">{it.name}</div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">{KIND[it.kind]}</div>
+        <div className="mt-1.5 text-center">
+          <div className="text-[12px] font-semibold leading-tight truncate">{it.name}</div>
+          <div className="text-[9px] uppercase tracking-wider text-muted-foreground mt-0.5 truncate">{KIND[it.kind]}</div>
         </div>
         <button onClick={() => act(it)} disabled={vipRunning || busy === it.id}
-          className={`d-pad-btn mt-2 h-10 rounded-xl text-[13px] font-semibold flex items-center justify-center gap-1 ${vipRunning
+          className={`d-pad-btn mt-1.5 h-9 rounded-xl text-[12px] font-semibold flex items-center justify-center gap-1 px-1 whitespace-nowrap ${vipRunning
             ? "bg-amber-400/15 text-amber-600 dark:text-amber-300 border border-amber-400/40 opacity-90"
             : on
             ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30"
@@ -193,23 +195,23 @@ export function SnakeStore() {
   const cbTitle = confirmBuy ? (confirmBuy.kind === "item" ? confirmBuy.it.name : `${(cbPack?.gems ?? 0).toLocaleString()} Gems`) : ""
   const cbSub = confirmBuy ? (confirmBuy.kind === "item" ? KIND[confirmBuy.it.kind] : "Gem pack") : ""
   const cbPrice = confirmBuy ? (confirmBuy.kind === "item" ? priceTextFor(confirmBuy.it) : `${CURRENCY_SYMBOL}${cbPack?.price ?? 0}`) : ""
-  const Grid = ({ items }: { items: StoreItem[] }) => <div className="grid grid-cols-2 gap-3 mt-3">{items.map((it) => <Card key={it.id} it={it} />)}</div>
+  const Grid = ({ items }: { items: StoreItem[] }) => <div className="grid grid-cols-3 gap-2 mt-3">{items.map((it) => <Card key={it.id} it={it} />)}</div>
   const Head = ({ t, n }: { t: string; n: number }) => <div className="text-[11px] uppercase tracking-wider text-muted-foreground mt-5">{t} <span className="opacity-60">· {n}</span></div>
   return (
     <>
-      <button aria-label="Store" onClick={() => setOpen(true)} className="d-pad-btn inline-flex items-center justify-center h-10 w-10 rounded-full hover:bg-accent hover:text-accent-foreground">
+      <button aria-label="Store" onClick={() => setOpen(true)} className="d-pad-btn inline-flex items-center justify-center h-12 w-12 rounded-full hover:bg-accent hover:text-accent-foreground">
         <ShoppingBag className="h-5 w-5" />
       </button>
       {open && createPortal(
-        <div className="fixed inset-0 z-[100] overflow-y-auto overscroll-contain backdrop-blur-md bg-black/25 dark:bg-black/50 text-[#123321] dark:text-white"
+        <div className="absolute inset-0 z-[10] overflow-y-auto overscroll-contain backdrop-blur-md bg-black/25 dark:bg-black/50 text-[#123321] dark:text-white"
           style={{ paddingTop: "max(12px, env(safe-area-inset-top))", paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
-          <div className="relative mx-3 sm:mx-auto max-w-md min-h-[calc(100%-0px)] rounded-3xl px-4 pt-5 pb-10 animate-fade-in shadow-2xl border border-white/40 dark:border-white/10 bg-[#f1f4f1]/95 dark:bg-[#0b0f14]/95">
+          <div className="relative mx-2 sm:mx-auto max-w-xl min-h-[calc(100%-0px)] rounded-3xl px-4 pt-4 pb-8 animate-fade-in shadow-2xl border border-white/40 dark:border-white/10 bg-[#f1f4f1]/95 dark:bg-[#0b0f14]/95">
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="text-[28px] leading-8 font-bold text-emerald-500">Store</h2>
                 <div className="text-[11px] tracking-[.15em] text-muted-foreground uppercase mt-0.5">Premium Edition</div>
               </div>
-              <button aria-label="Back" onClick={close} className={`d-pad-btn h-10 w-10 rounded-full flex items-center justify-center ${glass}`}><ChevronLeft className="h-5 w-5" /></button>
+              <button aria-label="Back" onClick={close} className={`panel-inner-close d-pad-btn h-12 w-12 rounded-full flex items-center justify-center ${glass}`}><ChevronLeft className="h-5 w-5" /></button>
             </div>
 
             <div className="flex gap-3 mt-4"><Pill label="Gems" value={st.gems} onAdd={() => setSheet("gems")} /><Pill label="Coins" value={st.coins} onAdd={() => setSheet("coins")} /></div>
@@ -275,7 +277,7 @@ export function SnakeStore() {
             )}
 
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-7 mb-2">Featured</div>
-            <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-3 -mx-4 px-4 [scrollbar-width:none]">
+            <div className="flex gap-2 overflow-x-auto snap-x snap-mandatory pb-3 -mx-4 px-4 [scrollbar-width:none]">
               {catalog.filter((i) => i.featured && isLiveNow(i)).map((it) => <Card key={it.id} it={it} wide />)}
             </div>
             <p className="text-[10px] text-muted-foreground mt-3 text-center">Earn coins by eating food (VIP: x2) and gems from high scores.</p>
@@ -315,7 +317,7 @@ export function SnakeStore() {
               </div>
             </div>
           )}
-        </div>, document.body)}
+        </div>, panelTarget)}
     </>
   )
 }

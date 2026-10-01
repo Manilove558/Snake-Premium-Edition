@@ -44,7 +44,7 @@ export function HomeLeaderboard() {
               <span className={`w-5 text-center font-bold tabular-nums ${i === 0 ? "text-amber-500" : i === 1 ? "text-slate-400" : i === 2 ? "text-amber-700 dark:text-amber-600" : "text-muted-foreground"}`}>
                 {i + 1}
               </span>
-              <button type="button" onClick={() => openPlayerProfile(r.uid)} className="d-pad-btn flex-1 min-w-0 flex items-center gap-2 text-left">
+              <button type="button" onClick={() => openPlayerProfile(r.uid)} className="d-pad-btn flex-1 min-w-0 min-h-[48px] flex items-center gap-2 text-left">
                 <PlayerAvatar photo={r.photo} avatarId={r.avatar} vip={r.vip} size={24} ring={false} />
                 <span className="min-w-0 truncate font-semibold">{r.vip && <VipCrown className="h-3.5 w-3.5" />}{r.name}</span>
               </button>
