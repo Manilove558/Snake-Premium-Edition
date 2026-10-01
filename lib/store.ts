@@ -345,16 +345,30 @@ export function buyCoinPack(id: string): { ok: boolean; msg: string; needGems?: 
 }
 
 /**
+ * RELEASE_BUILD: set this to true ONLY when building the Play Store release (AAB).
+ *
+ * What it does:
+ * - Forces TEST_MODE=false and FREE_MODE=false below (₹ items only after a REAL
+ *   Google Play payment — no more free demo grants).
+ * - Wipes demo-era cloud saves on first launch (see lib/cloud.ts): any
+ *   users/{uid}/game written by a test/demo build is discarded and replaced
+ *   with a fresh save, so items grabbed for free from a circulated test APK
+ *   do NOT carry over to the Play Store version.
+ *
+ * Keep it FALSE while testing — demo purchases keep working exactly as today.
+ */
+export const RELEASE_BUILD = false
+/**
  * Real-money purchases. TEST_MODE grants the item without charging anything.
  * For a real release replace the body with Google Play Billing (Capacitor plugin)
  * and only call grant() after the store confirms the payment.
  */
-export const TEST_MODE = true
+export const TEST_MODE = !RELEASE_BUILD
 /**
  * FREE_MODE: launch default. Built-in items are FREE until the admin sets a price for them in the admin panel
  * (per item: Free / Coins / Gems / ₹). Set to false to switch the coded prices in ITEMS back on for every item.
  */
-export const FREE_MODE = true
+export const FREE_MODE = !RELEASE_BUILD
 export function buy(id: string): { ok: boolean; msg: string } {
   load()
   const it = getCatalogItem(id); if (!it) return { ok: false, msg: "Item not found" }
