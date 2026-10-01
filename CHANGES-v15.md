@@ -130,3 +130,13 @@
 - Bug: Classic me mar kar jab player swipe karke Ranked (Multiplayer) mode par jata tha to button "Play Again" hi dikhta tha aur ranked leaderboard gayab rehta tha (leaderboard sirf `!gameStarted` par dikhta tha, game over par `gameStarted` true rehta hai).
 - Fix: swipe karte hi button "Start Game" ho jata hai (aur purana "Game Over — N pts" box hat jata hai); Ranked mode par leaderboard game-over screen par bhi dikhta hai.
 - File: components/snake-game.tsx.
+
+## v15.9.2 — VIP crown icon
+- 👑 emoji ki jagah ab VIP pass wala **Crown icon** (amber) har VIP player ke naam ke aage dikhta hai: Ranked leaderboard (home + Top 20), multiplayer lobby, battle (score chips + result), aur apni Profile.
+- Naya chhota component `components/vip-crown.tsx`; size har jagah ke hisaab se alag.
+- "VIP King" avatar ka 👑 emoji avatar ki hi pehchaan hai, isliye waisa hi rakha.
+- Files: vip-crown.tsx (naya), ranked-panel, home-leaderboard, multiplayer-lobby, multiplayer-battle, snake-profile, snake-store.
+
+## v15.9.3 — HOST icon
+- Multiplayer lobby me HOST badge ke bagal ka Crown icon hata kar tumhara `server.png` (cloud + server) icon laga diya (public/host-icon.png, 96px). Icon badge ke amber rang me hi rangta hai, light/dark dono me saaf dikhta hai.
+- Files: components/multiplayer-lobby.tsx, public/host-icon.png (naya).

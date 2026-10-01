@@ -11,6 +11,7 @@ import { subscribeMyRanked } from "@/lib/ranked-db"
 import { newRankedRecord, type RankedRecord } from "@/lib/ranked"
 import { PlayerAvatar, resolveAvatar } from "./player-avatar"
 import { TierBadge, RankDetailsSheet } from "./ranked-panel"
+import { VipCrown } from "./vip-crown"
 
 const glass = "bg-white/70 dark:bg-white/5 backdrop-blur-sm border border-black/5 dark:border-white/10 shadow-sm"
 
@@ -112,7 +113,7 @@ export function SnakeProfile() {
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5">
-                        <div className="font-bold truncate">{isVip(st) && <span title="VIP">👑 </span>}{shownName}</div>
+                        <div className="font-bold truncate">{isVip(st) && <VipCrown className="h-4 w-4" />}{shownName}</div>
                         <button aria-label="Edit name" onClick={startEdit} className="d-pad-btn h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-emerald-600 dark:text-emerald-300 bg-emerald-500/10"><Pencil className="h-3 w-3" /></button>
                       </div>
                     )}

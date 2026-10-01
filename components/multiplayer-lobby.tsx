@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Users, Copy, Check, LogOut, WifiOff, Crown, X, Play, Globe, Plus, Loader2, Settings } from "lucide-react"
+import { Users, Copy, Check, LogOut, WifiOff, X, Play, Globe, Plus, Loader2, Settings } from "lucide-react"
 import {
   createRoom,
   joinRoom,
@@ -34,6 +34,7 @@ import { destroyVoiceManager } from "@/lib/voice-chat"
 import RankedPanel, { RankedTag } from "./ranked-panel"
 import { isGoogleUser } from "@/lib/ranked-db"
 import { RANKED_MIN_PLAYERS } from "@/lib/ranked"
+import { VipCrown } from "./vip-crown"
 
 interface Props {
   darkMode: boolean
@@ -721,13 +722,13 @@ export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, init
                       className={`text-sm font-medium truncate flex-1 ${p.uid ? "cursor-pointer" : ""}`}
                       onClick={() => p.uid && openPlayerProfile(p.uid)}
                     >
-                      {p.vip && <span title="VIP" className="mr-1">👑</span>}{p.name}
+                      {p.vip && <VipCrown className="h-3.5 w-3.5" />}{p.name}
                       {p.id === playerId && <span className={`text-[11px] ${darkMode ? "text-white/50" : "text-black/50"}`}> (you)</span>}
                     </span>
                     {p.id !== playerId && <FriendAction targetUid={p.uid} />}
                     {room?.hostId === p.id && (
                       <span className="flex items-center gap-1 text-[10px] font-bold text-amber-500">
-                        <Crown className="w-3.5 h-3.5" /> HOST
+                        <span aria-hidden className="inline-block w-4 h-4 bg-current" style={{ WebkitMaskImage: "url(/host-icon.png)", maskImage: "url(/host-icon.png)", WebkitMaskSize: "contain", maskSize: "contain", WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center" }} /> HOST
                       </span>
                     )}
                     {isHost && p.id === playerId && (

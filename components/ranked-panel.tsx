@@ -20,6 +20,7 @@ import {
 import { useStore, claimRankRewards } from "@/lib/store"
 import { openPlayerProfile } from "@/lib/friends"
 import { PlayerAvatar } from "./player-avatar"
+import { VipCrown } from "./vip-crown"
 
 // ---------------------------------------------------------------------------
 // Small shared pieces (also used by the battle results screen)
@@ -372,7 +373,7 @@ export default function RankedPanel({ darkMode, uid, online, busy, globalBusy = 
                   <button type="button" onClick={() => openPlayerProfile(r.uid)} className="min-w-0 flex-1 flex items-center gap-2 text-left">
                     <PlayerAvatar photo={r.photo} avatarId={r.avatar} vip={r.vip} size={28} ring={false} />
                     <span className="min-w-0 truncate text-sm font-medium">
-                      {r.vip && <span className="mr-0.5">👑</span>}{r.name}
+                      {r.vip && <VipCrown className="h-3.5 w-3.5" />}{r.name}
                       {mine && <span className={`text-[11px] ${muted}`}> (you)</span>}
                     </span>
                   </button>

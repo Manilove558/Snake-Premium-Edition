@@ -40,6 +40,7 @@ import {
   type RankedRecord,
 } from "@/lib/ranked"
 import { armDisconnectPenalty, fetchRankedRecords, isGoogleUser, writeRankedUpdates, type RankedWrite } from "@/lib/ranked-db"
+import { VipCrown } from "./vip-crown"
 
 const CELL = 18 // battle arena render size (bigger on phones)
 const BW = 20
@@ -823,7 +824,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
             >
               {i === 0 && <Crown className="w-3 h-3 text-amber-500" />}
               <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-              <span className="font-medium truncate max-w-[64px]">{p.vip ? "👑" : ""}{p.name}</span>
+              <span className="font-medium truncate max-w-[64px]">{p.vip && <VipCrown className="h-3 w-3" />}{p.name}</span>
               <span className="font-bold">{p.score ?? 0}</span>
               {!p.alive && <Skull className="w-3 h-3 opacity-60" />}
             </div>
@@ -875,7 +876,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
                     return (
                       <div key={p.id} className="flex flex-wrap items-center justify-center gap-2 text-sm text-white">
                         <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-                        <span className="font-medium">{p.vip ? "👑 " : ""}{p.name}</span>
+                        <span className="font-medium">{p.vip && <VipCrown className="h-3.5 w-3.5" />}{p.name}</span>
                         <span className="font-bold">{p.score ?? 0}</span>
                         {rr && <RatingDelta delta={rr.delta} />}
                         {rr && <TierBadge elo={rr.newElo} />}

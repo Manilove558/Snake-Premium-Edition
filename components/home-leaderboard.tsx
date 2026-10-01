@@ -5,6 +5,7 @@ import { fetchLeaderboard, type LeaderboardRow } from "@/lib/ranked-db"
 import { getTier } from "@/lib/ranked"
 import { openPlayerProfile } from "@/lib/friends"
 import { PlayerAvatar } from "./player-avatar"
+import { VipCrown } from "./vip-crown"
 
 /**
  * Compact ranked leaderboard shown in the empty space above the home-screen
@@ -45,7 +46,7 @@ export function HomeLeaderboard() {
               </span>
               <button type="button" onClick={() => openPlayerProfile(r.uid)} className="d-pad-btn flex-1 min-w-0 flex items-center gap-2 text-left">
                 <PlayerAvatar photo={r.photo} avatarId={r.avatar} vip={r.vip} size={24} ring={false} />
-                <span className="min-w-0 truncate font-semibold">{r.vip && <span className="mr-0.5">👑</span>}{r.name}</span>
+                <span className="min-w-0 truncate font-semibold">{r.vip && <VipCrown className="h-3.5 w-3.5" />}{r.name}</span>
               </button>
               <span className="shrink-0 text-[11px] font-bold tabular-nums" style={{ color: t.color }}>
                 {t.emoji} {r.elo}

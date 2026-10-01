@@ -20,7 +20,7 @@ const VIP_PERKS = [
   ["VIP avatars", "Exclusive profile pictures — use them anywhere"],
   [`Daily reward`, `${VIP_DAILY.coins} coins + ${VIP_DAILY.gems} gems every day`],
   ["VIP-only items", "Exclusive skins, trails and food"],
-  ["👑 Crown", "Shown next to your name in multiplayer"],
+  ["Crown", "Shown next to your name in multiplayer, leaderboard and profile"],
 ]
 const glass = "bg-white/70 dark:bg-white/5 backdrop-blur-sm border border-black/5 dark:border-white/10 shadow-sm"
 const priceText = (it: StoreItem) => (it.currency === "inr" ? `${CURRENCY_SYMBOL}${it.price}` : `${it.price.toLocaleString()} ${it.currency === "gems" ? "Gems" : "Coins"}`)
