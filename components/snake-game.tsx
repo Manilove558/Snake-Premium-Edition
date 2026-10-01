@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useRef } from "react"
 import { createPortal } from "react-dom"
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Pause, Play, X, Settings, Trophy, Map as MapIcon, Shuffle, Grid3x3, Users } from "lucide-react"
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Pause, Play, X, Settings, Trophy, Map as MapIcon, Shuffle, Grid3x3, Users, LogOut } from "lucide-react"
 // Import the sound manager at the top of the file
 import { useSoundManager } from "./sound-manager"
-import MultiplayerLobby from "./multiplayer-lobby"
+import MultiplayerLobby, { NO_LOBBY_ROOM, type LobbyActions, type LobbyRoomInfo } from "./multiplayer-lobby"
 import { SnakeStore } from "./snake-store"
 import { SnakeVault } from "./snake-vault"
 import { SessionGuard } from "./session-guard"
@@ -525,6 +525,13 @@ export default function SnakeGame() {
   const [activeView, setActiveView] = useState<ViewId>("GAME")
   // The empty layer inside the central frame that panels portal into
   const [frameEl, setFrameEl] = useState<HTMLElement | null>(null)
+  // Battle slots: multiplayer draws on the SAME board frame + right dashboard as the classic game
+  const [mpCenterEl, setMpCenterEl] = useState<HTMLElement | null>(null)
+  const [mpSideEl, setMpSideEl] = useState<HTMLElement | null>(null)
+  const [mpLeftEl, setMpLeftEl] = useState<HTMLElement | null>(null)
+  // Room state reported by the lobby (host-only start, leave) for the bottom-right action bar
+  const [mpLobbyInfo, setMpLobbyInfo] = useState<LobbyRoomInfo>(NO_LOBBY_ROOM)
+  const mpLobbyActionsRef = useRef<LobbyActions | null>(null)
   const profileName = useDisplayName(user)
 
   // Accept a room invite: leave any current room, join the invited room's lobby.
@@ -1986,6 +1993,9 @@ export default function SnakeGame() {
 
   // ---- Landscape layout (game is locked to landscape) ----
   const playing = gameStarted && !gameOver
+  // Multiplayer layout flag: leaderboard moves to the left column, exit button sits between Score and Best
+  const isMultiplayerActive = mpView === "battle" && !!mpSession
+  const inBattle = isMultiplayerActive
   const startLabel = gameOver && !swipedAfterGameOver ? "Play Again" : "Start Game"
   const glassBox = "bg-white/70 dark:bg-white/5 border border-black/5 dark:border-white/10"
   const dpadBtn = `${glassBox} d-pad-btn w-full h-full min-h-[48px] min-w-[48px] rounded-2xl flex items-center justify-center active:scale-95 transition-transform`
@@ -2029,7 +2039,7 @@ export default function SnakeGame() {
 
       {/* CENTER: logo + current map, the square board (max size), swipe hint */}
       <section className="relative flex-1 min-w-0 min-h-0 flex flex-col gap-1 p-2 overflow-hidden">
-        {!playing && (
+        {!playing && !inBattle && (
           <div className="shrink-0 flex items-center gap-2.5">
             <div className="leading-none">
               <div className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-emerald-500 to-emerald-300 bg-clip-text text-transparent">Snake <span>PREMIUM</span></div>
@@ -2038,10 +2048,13 @@ export default function SnakeGame() {
           </div>
         )}
         {/* Swipe here to change mode. The inner square = min(width, height) of this area, so the board always fills the free space 1:1. */}
+        <div className="flex-1 min-h-0 min-w-0 flex gap-2">
+        {/* Multiplayer only: player leaderboard column left of the board */}
+        <div ref={setMpLeftEl} className={isMultiplayerActive ? "shrink-0 w-[clamp(112px,17vw,168px)] min-h-0 py-1" : "hidden"} />
         <div ref={modeSwipeAreaRef} className="flex-1 min-h-0 min-w-0 flex items-center justify-center" style={{ containerType: "size" }}>
           <div
             ref={canvasWrapperRef}
-            className="rounded-2xl overflow-hidden premium-glow border border-black/10 dark:border-white/10"
+            className={`rounded-2xl overflow-hidden premium-glow border border-black/10 dark:border-white/10 ${inBattle ? "hidden" : ""}`}
             style={{ width: "min(100cqw, 100cqh)", aspectRatio: "1 / 1" }}
           >
             <canvas
@@ -2052,8 +2065,11 @@ export default function SnakeGame() {
               style={{ imageRendering: "auto" }}
             />
           </div>
+          {/* Multiplayer battle board portals in here (same size / frame as the classic board) */}
+          <div ref={setMpCenterEl} className="contents" />
         </div>
-        {!playing && <div className="shrink-0 text-center text-[10px] opacity-50">Swipe ← → on the game to change mode</div>}
+        </div>
+        {!playing && !inBattle && <div className="shrink-0 text-center text-[10px] opacity-50">Swipe ← → on the game to change mode</div>}
 
         {/* Panel layer: Store / Vault / Settings / Rank / Map / Profile / Friends / Mailbox / Admin / Multiplayer render in here */}
         <div ref={setFrameEl} className={`panel-layer absolute inset-0 z-20 overflow-hidden rounded-2xl ${shownView === "GAME" ? "hidden" : ""}`} />
@@ -2071,7 +2087,9 @@ export default function SnakeGame() {
 
       {/* RIGHT panel: icons, score, options (scrolls when the screen is short) + pinned Start button */}
       <aside className="shrink-0 w-[clamp(184px,27vw,250px)] min-h-0 flex flex-col border-l border-black/5 dark:border-white/10 bg-white/40 dark:bg-white/[0.02]">
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 flex flex-col gap-2">
+        {/* Battle dashboard slot (score, steering, exit) — the classic content below stays mounted but hidden */}
+        <div ref={setMpSideEl} className={inBattle ? "flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 flex flex-col gap-2" : "hidden"} />
+        <div className={`flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 flex-col gap-2 ${inBattle ? "hidden" : "flex"}`}>
           {/* header icons — kept mounted while playing (hidden) so their listeners keep running */}
           <div
             className={`${playing ? "hidden" : "grid"} justify-items-center gap-1.5 [&>button]:border [&>button]:border-black/10 dark:[&>button]:border-white/10 [&>button]:bg-white/60 dark:[&>button]:bg-white/5`}
@@ -2167,28 +2185,66 @@ export default function SnakeGame() {
             </>
           )}
         </div>
-        {!playing && (
+        {!playing && !inBattle && (
           <div className="shrink-0 p-2 pt-1" style={{ paddingBottom: "max(8px, 0px)" }}>
-            {/* Split button: Start | Multiplayer */}
-            <div className="flex h-[52px] w-full rounded-2xl overflow-hidden text-white bg-gradient-to-r from-emerald-500 to-emerald-400 shadow-lg shadow-emerald-500/40">
-              <button
-                aria-label={startLabel}
-                onClick={() => { triggerHaptic(15); mpView === "lobby" || gameMode === GAME_MODES.MULTIPLAYER ? openLobby() : initGame() }}
-                className="d-pad-btn flex-1 flex flex-col items-center justify-center gap-0.5 active:bg-white/25"
-              >
-                <Play className="h-5 w-5" />
-                <span className="text-[10px] font-extrabold leading-none">{gameOver && !swipedAfterGameOver ? "Play Again" : "Start"}</span>
-              </button>
-              <div className="w-px my-2 bg-white/50" />
-              <button
-                aria-label="Multiplayer"
-                onClick={openLobby}
-                className="d-pad-btn flex-1 flex flex-col items-center justify-center gap-0.5 active:bg-white/25"
-              >
-                <Users className="h-5 w-5" />
-                <span className="text-[10px] font-extrabold leading-none">Multiplayer</span>
-              </button>
-            </div>
+            {/* Action bar: [ Start ] | [ 🚪 Leave Room (only inside a room) ] | [ Multiplayer ] */}
+            {(() => {
+              const inRoom = mpView === "lobby" && mpLobbyInfo.inRoom
+              const isHost = inRoom && mpLobbyInfo.isHost
+              // Inside a room only the host can start; everybody else sees "Waiting for Host..."
+              const startDisabled = inRoom && !mpLobbyInfo.canStart
+              const startTitle = !inRoom
+                ? startLabel
+                : !isHost
+                  ? "Waiting for Host..."
+                  : mpLobbyInfo.canStart || mpLobbyInfo.starting
+                    ? "Start battle"
+                    : `Need at least ${mpLobbyInfo.minPlayers} players`
+              return (
+                <div className="flex h-[52px] w-full rounded-2xl overflow-hidden text-white bg-gradient-to-r from-emerald-500 to-emerald-400 shadow-lg shadow-emerald-500/40">
+                  <button
+                    aria-label={startTitle}
+                    title={startTitle}
+                    disabled={startDisabled}
+                    onClick={() => {
+                      triggerHaptic(15)
+                      if (inRoom) { if (isHost) mpLobbyActionsRef.current?.start(); return }
+                      mpView === "lobby" || gameMode === GAME_MODES.MULTIPLAYER ? openLobby() : initGame()
+                    }}
+                    className="d-pad-btn flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 px-1 active:bg-white/25 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:bg-transparent"
+                  >
+                    <Play className="h-5 w-5" />
+                    <span className={`font-extrabold text-center ${inRoom && !isHost ? "text-[8px] leading-[1.05]" : "text-[10px] leading-none"}`}>
+                      {inRoom
+                        ? !isHost ? "Waiting for Host..." : mpLobbyInfo.starting ? "Starting…" : "Start"
+                        : gameOver && !swipedAfterGameOver ? "Play Again" : "Start"}
+                    </span>
+                  </button>
+                  {inRoom && (
+                    <>
+                      <div className="w-px my-2 bg-white/50" />
+                      <button
+                        aria-label="Leave Room"
+                        title="Leave Room"
+                        onClick={() => { triggerHaptic(15); void mpLobbyActionsRef.current?.leave() }}
+                        className="d-pad-btn shrink-0 w-12 flex items-center justify-center active:bg-white/25"
+                      >
+                        <LogOut className="h-5 w-5" />
+                      </button>
+                    </>
+                  )}
+                  <div className="w-px my-2 bg-white/50" />
+                  <button
+                    aria-label="Multiplayer"
+                    onClick={openLobby}
+                    className="d-pad-btn flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 px-1 active:bg-white/25"
+                  >
+                    <Users className="h-5 w-5" />
+                    <span className="text-[10px] font-extrabold leading-none">Multiplayer</span>
+                  </button>
+                </div>
+              )
+            })()}
           </div>
         )}
       </aside>
@@ -2229,6 +2285,8 @@ export default function SnakeGame() {
         <div className={shownView === "MULTIPLAYER" ? "contents" : "hidden"}>
           <MultiplayerLobby
             darkMode={darkMode}
+            onRoomInfo={setMpLobbyInfo}
+            actionsRef={mpLobbyActionsRef}
             onExit={() => {
               setMpView("none")
               setMpSession(null)
@@ -2253,6 +2311,10 @@ export default function SnakeGame() {
           controlMode={controlMode}
           soundEnabled={soundEnabled}
           volume={volume}
+          centerEl={mpCenterEl}
+          sideEl={mpSideEl}
+          leftEl={mpLeftEl}
+          bestScore={highScore}
           onExit={() => {
             setMpView("none")
             setMpSession(null)

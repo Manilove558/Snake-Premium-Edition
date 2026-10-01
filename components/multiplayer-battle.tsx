@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { Button } from "@/components/ui/button"
 import { X, Trophy, Skull, Crown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, RotateCcw, Home, Loader2 } from "lucide-react"
 import { ref, set, update, remove, onValue, push, increment } from "firebase/database"
@@ -53,6 +54,12 @@ interface Props {
   controlMode: "buttons" | "swipe"
   soundEnabled: boolean
   volume: number
+  /** classic frame slots: the board (center) and the dashboard (right) of the single-player screen */
+  centerEl: HTMLElement | null
+  sideEl: HTMLElement | null
+  /** left column between the Future-buttons strip and the board (player leaderboard) */
+  leftEl: HTMLElement | null
+  bestScore: number
   onExit: () => void
   onBackToLobby: () => void
 }
@@ -89,7 +96,7 @@ interface RankedResultRow {
 
 const matchKeyOf = (r: MpRoom) => `${r.code}:${r.game?.countdownEndsAt ?? 0}`
 
-export default function MultiplayerBattle({ code, playerId, darkMode, controlMode, soundEnabled, volume, onExit, onBackToLobby }: Props) {
+export default function MultiplayerBattle({ code, playerId, darkMode, controlMode, soundEnabled, volume, centerEl, sideEl, leftEl, bestScore, onExit, onBackToLobby }: Props) {
   const [room, setRoom] = useState<MpRoom | null>(null)
   const [snakes, setSnakes] = useState<Record<string, MpSnakeState>>({})
   const [food, setFood] = useState<Seg | null>(null)
@@ -624,7 +631,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
     }
     // Re-run when the phase changes: the swipe pad only renders from the
     // countdown onward, so listeners must attach when it appears.
-  }, [phase, controlMode])
+  }, [phase, controlMode, centerEl, sideEl, leftEl])
 
   const handleExit = async () => {
     if (loopRef.current) clearInterval(loopRef.current)
@@ -671,10 +678,14 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
     if (!ctx) return
     const now = Date.now()
 
-    ctx.fillStyle = darkMode ? "#0a1410" : "#eef5f0"
+    // Same background + grid look as the classic canvas
+    const bg = ctx.createLinearGradient(0, 0, canvas.width, canvas.height)
+    bg.addColorStop(0, darkMode ? "#101820" : "#eef4ea")
+    bg.addColorStop(1, darkMode ? "#0a0f14" : "#dbe8d6")
+    ctx.fillStyle = bg
     ctx.fillRect(0, 0, canvas.width, canvas.height)
     if (settings.grid) {
-      ctx.strokeStyle = darkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)"
+      ctx.strokeStyle = darkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.06)"
       ctx.lineWidth = 1
       for (let x = 1; x < BW; x++) {
         ctx.beginPath()
@@ -765,7 +776,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
       drawSnake(snakeRef.current, myPlayer?.color ?? "#3af08d", true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snakes, food, frame, darkMode, room])
+  }, [snakes, food, frame, darkMode, room, centerEl])
 
   // --- derived UI ------------------------------------------------------------------
   const countdownEndsAt = room?.game?.countdownEndsAt ?? 0
@@ -780,54 +791,28 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
         ? `${k.victimName} hit the wall`
         : `${k.victimName} crashed into themselves`
 
+  const glassBox = "bg-white/70 dark:bg-white/5 border border-black/5 dark:border-white/10"
+  const dpadBtn = `${glassBox} d-pad-btn w-full h-full min-h-[48px] min-w-[48px] rounded-2xl flex items-center justify-center active:scale-95 transition-transform`
+  const steering = phase === "countdown" || (phase === "playing" && aliveRef.current)
+  const myScore = myPlayer?.score ?? 0
+
+  if (!centerEl || !sideEl || !leftEl) return null
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center safe-area-pt safe-area-pb pr-[max(8px,env(safe-area-inset-right))] bg-black/60 backdrop-blur-sm p-2"
-      // keep the left "Future buttons" strip visible and usable next to the battle
-      style={{ left: "calc(env(safe-area-inset-left, 0px) + clamp(64px, 9vw, 84px) + 1px)" }}
-    >
-      <div
-        className={`w-full h-full max-w-[940px] max-h-[520px] rounded-3xl border p-3 shadow-2xl flex gap-3 ${
-          darkMode ? "bg-[#0d1f16] border-white/10 text-white" : "bg-white border-black/10 text-[#123321]"
-        }`}
-      >
-        {/* LEFT: header + arena (biggest square that fits) */}
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-sm font-bold">
-            Battle <span className={`font-mono ${darkMode ? "text-white/50" : "text-black/50"}`}>{code}</span>
-            {room?.isRanked && <RankedTag className="ml-2 align-middle" />}
-          </div>
-          <div className="flex items-center gap-1">
-            <VoiceChat code={code} playerId={playerId} playerName={myPlayer?.name ?? "Player"} darkMode={darkMode} compact />
-            <button
-              onClick={handleExit}
-              aria-label="Leave battle"
-              className={`p-2 rounded-full ${darkMode ? "hover:bg-white/10" : "hover:bg-black/5"}`}
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {(settings.map !== "classic" || settings.teleport || settings.avoidCollision) && (
-          <div className={`mb-2 text-[10px] ${darkMode ? "text-white/50" : "text-black/50"}`}>
-            Map: {battleMap.name}
-            {settings.teleport ? " · Teleport" : ""}
-            {settings.avoidCollision ? " · No snake collision" : ""}
-          </div>
-        )}
-
-        {/* Arena */}
-        <div className="flex-1 min-h-0 min-w-0 flex items-center justify-center" style={{ containerType: "size" }}>
-        <div ref={arenaWrapRef} className="relative" style={{ width: "min(100cqw, 100cqh)", aspectRatio: "1 / 1" }}>
+    <>
+      {/* CENTER: the classic board frame, the battle is drawn on it */}
+      {createPortal(
+        <div
+          ref={arenaWrapRef}
+          className="relative rounded-2xl overflow-hidden premium-glow border border-black/10 dark:border-white/10"
+          style={{ width: "min(100cqw, 100cqh)", aspectRatio: "1 / 1" }}
+        >
           <canvas
             ref={canvasRef}
             width={BW * CELL}
             height={BH * CELL}
-            className="rounded-2xl w-full h-auto touch-none"
-            style={{ aspectRatio: "1/1" }}
+            className="block w-full h-full touch-none"
+            style={{ imageRendering: "auto" }}
           />
           {phase === "countdown" && countdownNum > 0 && (
             <div className="absolute inset-0 flex items-center justify-center">
@@ -926,126 +911,114 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
               </div>
             </div>
           )}
-        </div>
-        </div>
+        </div>,
+        centerEl,
+      )}
 
-        </div>
+      {/* RIGHT: same dashboard as single-player — score / best, steering controls, exit */}
+      {createPortal(
+        <>
+          <div className="flex items-center justify-between gap-1">
+            <div className="text-[11px] font-bold leading-none">
+              Battle <span className="font-mono opacity-50">{code}</span>
+              {room?.isRanked && <RankedTag className="ml-1 align-middle" />}
+            </div>
+            <VoiceChat code={code} playerId={playerId} playerName={myPlayer?.name ?? "Player"} darkMode={darkMode} compact />
+          </div>
 
-        {/* RIGHT: scores, kill feed and the steering controls */}
-        <div className="shrink-0 w-[clamp(150px,28vw,230px)] min-h-0 flex flex-col gap-2">
-        {/* Leaderboard */}
-        <div className="shrink-0 flex flex-col gap-1">
-          {leaderboard.slice(0, 4).map((p, i) => (
-            <div
-              key={p.id}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] whitespace-nowrap ${
-                darkMode ? "bg-white/5" : "bg-black/5"
-              } ${p.id === playerId ? "ring-1 ring-emerald-500" : ""}`}
+          {/* [ SCORE ] [ ✕ Exit ] [ BEST ] */}
+          <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-1.5">
+            <div className="rounded-xl bg-white/70 dark:bg-white/[0.06] border border-black/5 dark:border-white/10 px-2.5 py-1 text-center">
+              <div className="text-[8px] uppercase tracking-wider opacity-50 font-semibold">Score</div>
+              <div className="text-base font-extrabold tabular-nums leading-tight">{myScore}</div>
+            </div>
+            <button
+              aria-label="Leave battle"
+              title="Leave battle"
+              onClick={handleExit}
+              className="d-pad-btn self-center h-10 w-10 rounded-full flex items-center justify-center text-red-500 bg-white/70 dark:bg-white/5 border border-red-500/30 shadow-sm active:scale-90 transition-transform"
             >
-              {i === 0 && <Crown className="w-3 h-3 text-amber-500" />}
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-              <span className="font-medium truncate max-w-[96px]">{p.vip && <VipCrown className="h-3 w-3" />}{p.name}</span>
-              <span className="font-bold">{p.score ?? 0}</span>
-              {!p.alive && <Skull className="w-3 h-3 opacity-60" />}
-            </div>
-          ))}
-        </div>
-
-        {/* Kill feed */}
-        <div className="shrink-0 min-h-0 flex flex-col gap-0.5">
-          {kills.slice(-2).map((k) => (
-            <div key={k.key} className={`text-[11px] ${darkMode ? "text-white/60" : "text-black/60"}`}>
-              💀 {killText(k)}
-            </div>
-          ))}
-        </div>
-
-        {/* D-pad — same design as single-player, shown as soon as Start Battle is tapped */}
-        {(phase === "countdown" || (phase === "playing" && aliveRef.current)) && controlMode !== "swipe" && (
-          <div className="flex-1 min-h-0 min-w-0 flex items-center justify-center" style={{ containerType: "size" }}>
-            <div className="grid grid-cols-3 gap-2" style={{ width: "min(100cqw, 100cqh)" }}>
-              <div className="col-start-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onTouchStart={() => setDir(0, -1)}
-                  onClick={() => setDir(0, -1)}
-                  className="w-full aspect-square rounded-2xl bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10 d-pad-btn"
-                  aria-label="Up"
-                >
-                  <ArrowUp className="h-5 w-5" />
-                </Button>
-              </div>
-              <div className="col-start-1 row-start-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onTouchStart={() => setDir(-1, 0)}
-                  onClick={() => setDir(-1, 0)}
-                  className="w-full aspect-square rounded-2xl bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10 d-pad-btn"
-                  aria-label="Left"
-                >
-                  <ArrowLeft className="h-5 w-5" />
-                </Button>
-              </div>
-              <div className="col-start-3 row-start-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onTouchStart={() => setDir(1, 0)}
-                  onClick={() => setDir(1, 0)}
-                  className="w-full aspect-square rounded-2xl bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10 d-pad-btn"
-                  aria-label="Right"
-                >
-                  <ArrowRight className="h-5 w-5" />
-                </Button>
-              </div>
-              <div className="col-start-2 row-start-3">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onTouchStart={() => setDir(0, 1)}
-                  onClick={() => setDir(0, 1)}
-                  className="w-full aspect-square rounded-2xl bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10 d-pad-btn"
-                  aria-label="Down"
-                >
-                  <ArrowDown className="h-5 w-5" />
-                </Button>
-              </div>
+              <X className="h-5 w-5" />
+            </button>
+            <div className="rounded-xl bg-white/70 dark:bg-white/[0.06] border border-black/5 dark:border-white/10 px-2.5 py-1 text-center">
+              <div className="text-[8px] uppercase tracking-wider opacity-50 font-semibold">Best</div>
+              <div className="text-base font-extrabold tabular-nums leading-tight">{Math.max(bestScore, myScore)}</div>
             </div>
           </div>
-        )}
-        {controlMode !== "buttons" && (phase === "countdown" || (phase === "playing" && aliveRef.current)) && (
-          <div
-            ref={swipePadRef}
-            className={`w-full flex-1 min-h-[96px] rounded-2xl relative overflow-hidden border bg-gradient-to-br ${
-              darkMode
-                ? "from-white/5 to-white/[0.02] border-white/10"
-                : "from-white/70 to-white/40 border-black/10"
-            }`}
-            style={{ touchAction: "none" }}
-          >
-            <div
-              className={`absolute inset-0 flex flex-col items-center justify-center gap-1 pointer-events-none ${
-                darkMode ? "text-white/40" : "text-black/40"
-              }`}
-            >
-              <div className="flex gap-3 opacity-50">
-                <ArrowUp className="h-4 w-4" />
-              </div>
-              <div className="flex gap-3 items-center opacity-50">
-                <ArrowLeft className="h-4 w-4" />
-                <span className="text-xs font-medium">Swipe to steer</span>
-                <ArrowRight className="h-4 w-4" />
-              </div>
-              <div className="flex gap-3 opacity-50">
-                <ArrowDown className="h-4 w-4" />
+
+          {(settings.map !== "classic" || settings.teleport || settings.avoidCollision) && (
+            <div className="text-[9px] opacity-50 leading-tight">
+              {battleMap.name}
+              {settings.teleport ? " · Teleport" : ""}
+              {settings.avoidCollision ? " · No collision" : ""}
+            </div>
+          )}
+
+          {/* Steering: D-pad or swipe pad, exactly like single-player */}
+          {steering && controlMode !== "swipe" && (
+            <div className="flex-1 min-h-[110px] min-w-0 flex items-center justify-center" style={{ containerType: "size" }}>
+              <div className="grid gap-1.5" style={{ width: "min(100cqw, 100cqh)", aspectRatio: "1 / 1", gridTemplateColumns: "repeat(3, 1fr)", gridTemplateRows: "repeat(3, 1fr)" }}>
+                <div style={{ gridColumn: 2, gridRow: 1 }}><button aria-label="Up" onTouchStart={() => setDir(0, -1)} onClick={() => setDir(0, -1)} className={dpadBtn}><ArrowUp className="h-6 w-6" /></button></div>
+                <div style={{ gridColumn: 1, gridRow: 2 }}><button aria-label="Left" onTouchStart={() => setDir(-1, 0)} onClick={() => setDir(-1, 0)} className={dpadBtn}><ArrowLeft className="h-6 w-6" /></button></div>
+                <div style={{ gridColumn: 3, gridRow: 2 }}><button aria-label="Right" onTouchStart={() => setDir(1, 0)} onClick={() => setDir(1, 0)} className={dpadBtn}><ArrowRight className="h-6 w-6" /></button></div>
+                <div style={{ gridColumn: 2, gridRow: 3 }}><button aria-label="Down" onTouchStart={() => setDir(0, 1)} onClick={() => setDir(0, 1)} className={dpadBtn}><ArrowDown className="h-6 w-6" /></button></div>
               </div>
             </div>
+          )}
+          {steering && controlMode !== "buttons" && (
+            <div
+              ref={swipePadRef}
+              className={`${glassBox} w-full flex-1 min-h-[96px] rounded-2xl relative overflow-hidden`}
+              style={{ touchAction: "none" }}
+            >
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground pointer-events-none">
+                <ArrowUp className="h-4 w-4 opacity-50" />
+                <div className="flex gap-2 items-center opacity-50">
+                  <ArrowLeft className="h-4 w-4" />
+                  <span className="text-xs font-medium">Swipe to steer</span>
+                  <ArrowRight className="h-4 w-4" />
+                </div>
+                <ArrowDown className="h-4 w-4 opacity-50" />
+              </div>
+            </div>
+          )}
+          {!steering && <div className="flex-1" />}
+
+        </>,
+        sideEl,
+      )}
+      {/* LEFT: stacked player leaderboard (between the Future-buttons strip and the board) */}
+      {createPortal(
+        <div
+          className={`h-full max-h-full w-full rounded-2xl overflow-hidden flex flex-col shadow-sm ${glassBox}`}
+        >
+          <div className="shrink-0 px-2.5 pt-2 pb-1 text-[8px] uppercase tracking-[.2em] font-bold opacity-50 text-center">
+            Players · {leaderboard.length}
           </div>
-        )}
-        </div>
-      </div>
-    </div>
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-1.5 pb-1.5 flex flex-col gap-1">
+            {leaderboard.map((p, i) => (
+              <div
+                key={p.id}
+                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-xl text-[11px] ${
+                  darkMode ? "bg-white/5" : "bg-black/5"
+                } ${p.id === playerId ? "ring-1 ring-emerald-500" : ""} ${!p.alive ? "opacity-55" : ""}`}
+              >
+                {i === 0 ? <Crown className="w-3 h-3 shrink-0 text-amber-500" /> : <span className="w-3 shrink-0 text-[9px] font-bold opacity-40 text-center">{i + 1}</span>}
+                <span className="w-2.5 h-2.5 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
+                <span className="font-semibold truncate flex-1 min-w-0">{p.vip && <VipCrown className="h-3 w-3" />}{p.name}</span>
+                {!p.alive && <Skull className="w-3 h-3 shrink-0 opacity-70" />}
+                <span className="font-extrabold tabular-nums">{p.score ?? 0}</span>
+              </div>
+            ))}
+          </div>
+          {kills.length > 0 && (
+            <div className="shrink-0 px-2.5 py-1.5 border-t border-black/5 dark:border-white/10 text-[10px] opacity-60 leading-tight">
+              💀 {killText(kills[kills.length - 1])}
+            </div>
+          )}
+        </div>,
+        leftEl,
+      )}
+    </>
   )
 }

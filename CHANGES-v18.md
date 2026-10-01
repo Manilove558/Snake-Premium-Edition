@@ -27,3 +27,36 @@
 - Left strip (Future Buttons, vertical) ab har mode me rehti hai: home, classic game ke dauraan, aur multiplayer / ranked battle me bhi. Pehle game chalte waqt hat jati thi.
 - Multiplayer battle ab full-screen nahi dhakta: uska panel strip ke right se shuru hota hai.
 - Files: components/snake-game.tsx, components/multiplayer-battle.tsx
+
+## v18.5 — Multiplayer ab classic canvas par
+- Multiplayer battle ka alag overlay panel (apna canvas + apne controls) hata diya.
+- Battle ab classic game wale hi center board frame me draw hota hai (same size, border, glow, background + grid), left Future-buttons strip bhi waisi hi.
+- Right dashboard bilkul classic jaisa: Score / Best, D-pad ya "Swipe to steer" pad (Settings ke control mode ke hisab se), neeche Exit (X) button. Live battle pause nahi hoti, isliye Pause nahi hai.
+- Room code, voice chat, mini leaderboard aur kill feed right panel me compact rakhe.
+- Countdown, Eliminated, Result / Rematch / Back to room overlay board ke andar hi dikhte hain.
+- Files: components/multiplayer-battle.tsx, components/snake-game.tsx
+
+## v18.6 — Multiplayer layout (only when a battle is active)
+- New flag `isMultiplayerActive` in snake-game.tsx. Single-player / lobby UI is unchanged.
+- Player leaderboard (rank/crown, colour dot, name, skull when out, live score) moved from the right panel to a new left column between the Future-buttons strip and the board, with the latest kill below it.
+- Red ✕ exit button removed from the bottom of the right panel and placed between the cards: [ SCORE ] [ ✕ ] [ BEST ].
+- Files: components/multiplayer-battle.tsx, components/snake-game.tsx
+
+## v18.7 — Room lobby
+- Room me players ab ek row me 3 (grid 3 columns, compact card: colour dot, naam, HOST / (you) tag, friend action; host ke card par settings gear).
+- Pehle wala bada "Start Battle" button + alag "Leave Room" button ab ek split button hai: [ Start | Leave Room ]. Start sirf host ke liye (min players poore hone par) enabled; Leave Room sabko.
+- Lobby card thoda wide (max-w-md) taaki 3 cards fit ho.
+- File: components/multiplayer-lobby.tsx
+
+## v18.8 — Room players = battle jaisi row, 2 per row
+- Room me player ab battle ke leaderboard jaisi horizontal row me: [host icon] ● naam (VIP crown ke saath), ek row me 2 players (3 se 2 kiya).
+- "(you)" text hata ke apni row par green ring (battle jaisa). HOST ab chhota icon hai. Friend action aur host ka settings gear row ke end me.
+- File: components/multiplayer-lobby.tsx
+
+## v18.9 — Host-only start + Leave Room icon in the bottom-right bar
+- Match start is host-only. Non-host: both Start buttons (lobby modal + bottom-right bar) are disabled and read "Waiting for Host...".
+- Host can start from either place: the Start half of the lobby modal's [Start | Leave Room], or the bottom-right bar's Start. Start also needs the minimum players. `handleStartBattle` re-checks `isHost` as a safety net.
+- Bottom-right bar inside a room: [ Start ] | [ 🚪 Leave Room ] | [ Multiplayer ]. Outside a room it stays [ Start ] | [ Multiplayer ].
+- The bottom-bar Leave Room leaves the room (voice + Firebase) and returns to the default single-player view (mpView none, session cleared, frame back to GAME).
+- Lobby reports room state to the home screen via `onRoomInfo` + `actionsRef` (LobbyRoomInfo / LobbyActions in multiplayer-lobby.tsx).
+- Files: components/multiplayer-lobby.tsx, components/snake-game.tsx

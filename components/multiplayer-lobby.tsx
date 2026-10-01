@@ -37,8 +37,27 @@ import { isGoogleUser } from "@/lib/ranked-db"
 import { RANKED_MIN_PLAYERS } from "@/lib/ranked"
 import { VipCrown } from "./vip-crown"
 
+/** What the home screen's bottom-right action bar needs to know about the room (host-only start, leave) */
+export interface LobbyRoomInfo {
+  inRoom: boolean
+  isHost: boolean
+  /** host + enough players + not already starting */
+  canStart: boolean
+  starting: boolean
+  minPlayers: number
+}
+export interface LobbyActions {
+  /** host only (ignored for everybody else) */
+  start: () => void
+  /** leave the room cleanly and close the multiplayer view */
+  leave: () => Promise<void>
+}
+export const NO_LOBBY_ROOM: LobbyRoomInfo = { inRoom: false, isHost: false, canStart: false, starting: false, minPlayers: 2 }
+
 interface Props {
   darkMode: boolean
+  onRoomInfo?: (info: LobbyRoomInfo) => void
+  actionsRef?: { current: LobbyActions | null }
   onExit: () => void
   onBattleStart: (code: string, playerId: string) => void
   initialCode?: string
@@ -205,7 +224,7 @@ const JOIN_ERRORS: Record<string, string> = {
   SIGN_IN_REQUIRED: "Ranked rooms need a Google sign-in.",
 }
 
-export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, initialCode, initialPlayerId }: Props) {
+export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onExit, onBattleStart, initialCode, initialPlayerId }: Props) {
   const [screen, setScreen] = useState<"setup" | "lobby">(initialCode && initialPlayerId ? "lobby" : "setup")
   const [name, setName] = useState("")
   const [joinCode, setJoinCode] = useState("")
@@ -309,6 +328,22 @@ export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, init
   const settings = getRoomSettings(room)
   const autoStartAt = room?.autoStartAt ?? null
   const secondsLeft = autoStartAt ? Math.max(0, Math.ceil((autoStartAt - (now + serverOffset)) / 1000)) : null
+
+  // Share room state + actions with the bottom-right action bar (Start / Leave Room live there too)
+  const canStartNow = screen === "lobby" && isHost && !loading && players.length >= BATTLE_MIN_PLAYERS
+  if (actionsRef) actionsRef.current = { start: () => { void handleStartBattle() }, leave: () => handleLeaveAndExit() }
+  const onRoomInfoRef = useRef(onRoomInfo)
+  onRoomInfoRef.current = onRoomInfo
+  useEffect(() => {
+    onRoomInfoRef.current?.({
+      inRoom: screen === "lobby" && !!code,
+      isHost: screen === "lobby" && isHost,
+      canStart: canStartNow,
+      starting: loading,
+      minPlayers: BATTLE_MIN_PLAYERS,
+    })
+  }, [screen, code, isHost, canStartNow, loading])
+  useEffect(() => () => { onRoomInfoRef.current?.(NO_LOBBY_ROOM) }, [])
 
   // Settings panel is host-only and lobby-only
   useEffect(() => {
@@ -523,7 +558,22 @@ export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, init
     resetToSetup()
   }
 
+  // Leave the room and go all the way back to the default single-player view
+  const handleLeaveAndExit = async () => {
+    leavingRef.current = true
+    try {
+      if (code && playerId) {
+        destroyVoiceManager(code, playerId)
+        await leaveRoom(code, playerId)
+      }
+    } catch {}
+    resetToSetup()
+    onExit()
+  }
+
   const handleStartBattle = async () => {
+    // Only the host may start the match (UI is disabled for everybody else, this is the safety net)
+    if (!isHost || players.length < BATTLE_MIN_PLAYERS) return
     setLoading(true)
     setError("")
     try {
@@ -645,7 +695,7 @@ export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, init
     })()}
     <div className="absolute inset-0 z-50 flex overflow-y-auto p-2 bg-black/60 backdrop-blur-sm">
       <div
-        className={`m-auto w-full max-w-sm rounded-3xl border p-4 shadow-2xl ${
+        className={`m-auto w-full max-w-md rounded-3xl border p-4 shadow-2xl ${
           darkMode ? "bg-[#0d1f16] border-white/10 text-white" : "bg-white border-black/10 text-[#123321]"
         }`}
       >
@@ -835,39 +885,42 @@ export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, init
                   </button>
                 )}
               </div>
-              <div className="flex flex-col gap-2 max-h-44 overflow-y-auto">
+              {/* 2 per row, same horizontal row style as the in-battle leaderboard: dot + name (+ small tags) */}
+              <div className="grid grid-cols-2 gap-1.5 max-h-44 overflow-y-auto">
                 {players.map((p) => (
                   <div
                     key={p.id}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-xl ${
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-xl text-[11px] min-w-0 ${
                       darkMode ? "bg-white/5" : "bg-black/5"
-                    }`}
+                    } ${p.id === playerId ? "ring-1 ring-emerald-500" : ""}`}
                   >
+                    {room?.hostId === p.id && (
+                      <span
+                        aria-hidden
+                        title="Host"
+                        className="inline-block w-3.5 h-3.5 shrink-0 bg-amber-500"
+                        style={{ WebkitMaskImage: "url(/host-icon.png)", maskImage: "url(/host-icon.png)", WebkitMaskSize: "contain", maskSize: "contain", WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center" }}
+                      />
+                    )}
                     <span
-                      className="w-4 h-4 rounded-full shrink-0"
-                      style={{ backgroundColor: p.color, boxShadow: `0 0 8px ${p.color}` }}
+                      className="w-2.5 h-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: p.color, boxShadow: `0 0 6px ${p.color}` }}
                     />
                     <span
-                      className={`text-sm font-medium truncate flex-1 ${p.uid ? "cursor-pointer" : ""}`}
+                      className={`font-medium truncate flex-1 min-w-0 ${p.uid ? "cursor-pointer" : ""}`}
                       onClick={() => p.uid && openPlayerProfile(p.uid)}
                     >
-                      {p.vip && <VipCrown className="h-3.5 w-3.5" />}{p.name}
-                      {p.id === playerId && <span className={`text-[11px] ${darkMode ? "text-white/50" : "text-black/50"}`}> (you)</span>}
+                      {p.vip && <VipCrown className="h-3 w-3" />}{p.name}
                     </span>
                     {p.id !== playerId && <FriendAction targetUid={p.uid} />}
-                    {room?.hostId === p.id && (
-                      <span className="flex items-center gap-1 text-[10px] font-bold text-amber-500">
-                        <span aria-hidden className="inline-block w-4 h-4 bg-current" style={{ WebkitMaskImage: "url(/host-icon.png)", maskImage: "url(/host-icon.png)", WebkitMaskSize: "contain", maskSize: "contain", WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center" }} /> HOST
-                      </span>
-                    )}
                     {isHost && p.id === playerId && (
                       <button
                         onClick={() => setShowSettings(true)}
                         aria-label="Room settings"
                         title="Room settings"
-                        className={`p-1.5 -mr-1 rounded-full ${darkMode ? "hover:bg-white/10" : "hover:bg-black/10"}`}
+                        className={`p-1 -mr-1 shrink-0 rounded-full ${darkMode ? "hover:bg-white/10" : "hover:bg-black/10"}`}
                       >
-                        <Settings className="w-4 h-4 text-emerald-500" />
+                        <Settings className="w-3.5 h-3.5 text-emerald-500" />
                       </button>
                     )}
                   </div>
@@ -902,32 +955,48 @@ export default function MultiplayerLobby({ darkMode, onExit, onBattleStart, init
               </div>
             )}
 
-            {isHost ? (
-              <div className="flex flex-col gap-2">
-                <Button
-                  onClick={handleStartBattle}
-                  disabled={loading || players.length < BATTLE_MIN_PLAYERS}
-                  className="h-12 rounded-xl text-base font-semibold bg-gradient-to-r from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 text-white shadow-lg shadow-emerald-500/30 disabled:opacity-50"
-                >
-                  <Play className="w-5 h-5 mr-2" /> {loading ? "Starting…" : "Start Battle"}
-                </Button>
-                {players.length < BATTLE_MIN_PLAYERS && (
-                  <p className={`text-center text-[11px] ${darkMode ? "text-white/50" : "text-black/50"}`}>
-                    Need at least {BATTLE_MIN_PLAYERS} players to start
-                  </p>
-                )}
-              </div>
-            ) : (
-              !isGlobal && (
-                <p className={`text-center text-xs ${darkMode ? "text-white/50" : "text-black/50"}`}>
-                  Waiting for the host to start the battle…
-                </p>
+            {/* One split button: Start | Leave Room */}
+            {(() => {
+              const canStart = isHost && !loading && players.length >= BATTLE_MIN_PLAYERS
+              return (
+                <div className="flex flex-col gap-2">
+                  <div className="flex h-14 w-full rounded-xl overflow-hidden text-white bg-gradient-to-r from-emerald-500 to-emerald-400 shadow-lg shadow-emerald-500/30">
+                    <button
+                      onClick={handleStartBattle}
+                      disabled={!canStart}
+                      aria-label={isHost ? "Start battle" : "Waiting for Host..."}
+                      title={isHost ? (players.length < BATTLE_MIN_PLAYERS ? `Need at least ${BATTLE_MIN_PLAYERS} players` : "Start battle") : "Waiting for Host..."}
+                      className="flex-1 flex flex-col items-center justify-center gap-0.5 hover:bg-white/15 active:bg-white/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                    >
+                      {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5" />}
+                      <span className={`font-extrabold text-center ${isHost ? "text-[11px] leading-none" : "text-[9px] leading-tight px-1"}`}>
+                        {!isHost ? "Waiting for Host..." : loading ? "Starting…" : "Start"}
+                      </span>
+                    </button>
+                    <div className="w-px my-2.5 bg-white/50" />
+                    <button
+                      onClick={handleLeave}
+                      aria-label="Leave room"
+                      className="flex-1 flex flex-col items-center justify-center gap-0.5 hover:bg-white/15 active:bg-white/25 transition-colors"
+                    >
+                      <LogOut className="w-5 h-5" />
+                      <span className="text-[11px] font-extrabold leading-none">Leave Room</span>
+                    </button>
+                  </div>
+                  {isHost && players.length < BATTLE_MIN_PLAYERS ? (
+                    <p className={`text-center text-[11px] ${darkMode ? "text-white/50" : "text-black/50"}`}>
+                      Need at least {BATTLE_MIN_PLAYERS} players to start
+                    </p>
+                  ) : (
+                    !isHost && !isGlobal && (
+                      <p className={`text-center text-xs ${darkMode ? "text-white/50" : "text-black/50"}`}>
+                        Waiting for the host to start the battle…
+                      </p>
+                    )
+                  )}
+                </div>
               )
-            )}
-
-            <Button onClick={handleLeave} variant="outline" className="rounded-xl">
-              <LogOut className="w-4 h-4 mr-2" /> Leave Room
-            </Button>
+            })()}
           </div>
         )}
       </div>
