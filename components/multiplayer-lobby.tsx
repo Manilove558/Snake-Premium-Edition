@@ -24,6 +24,7 @@ import {
   type MpSettings,
 } from "@/lib/multiplayer"
 import { BATTLE_MAPS, getBattleMap, type BattleMap } from "@/lib/battle-maps"
+import { BR_MIN_PLAYERS, BR_MAX_PLAYERS, BR_GRID, ZONE_INTERVAL_MS } from "@/lib/br/constants"
 import { useAuthUser } from "@/lib/auth"
 import { useDisplayName } from "@/lib/profile-name"
 import { isVip, useStore } from "@/lib/store"
@@ -146,6 +147,57 @@ function SettingsPanel({
           </button>
         </div>
 
+        {/* Mode: Classic Battle / Snake Battle Royale (ranked rooms are always classic) */}
+        {!ranked && (
+          <>
+            <div className={`text-xs font-semibold mb-2 ${muted}`}>MODE</div>
+            <div className="grid grid-cols-2 gap-2 mb-5">
+              {(
+                [
+                  { id: "classic", icon: "⚔️", name: "Classic Battle", sub: `2-${BR_MAX_PLAYERS} players · 20×20` },
+                  { id: "royale", icon: "👑", name: "Snake Battle Royale", sub: `${BR_MIN_PLAYERS}-${BR_MAX_PLAYERS} players · ${BR_GRID}×${BR_GRID} · shrinking zone` },
+                ] as const
+              ).map((m) => {
+                const active = settings.mode === m.id
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => onChange({ mode: m.id })}
+                    className={`p-2.5 rounded-xl border-2 text-center transition-colors ${
+                      active ? "border-emerald-500 bg-emerald-500/10" : darkMode ? "border-white/10 hover:border-white/30" : "border-black/10 hover:border-black/30"
+                    }`}
+                  >
+                    <div className="text-2xl leading-none">{m.icon}</div>
+                    <div className={`mt-1 text-[12px] font-bold leading-tight ${active ? "text-emerald-500" : ""}`}>{m.name}</div>
+                    <div className={`mt-0.5 text-[10px] leading-tight ${muted}`}>{m.sub}</div>
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        )}
+
+        {settings.mode === "royale" && !ranked ? (
+          <>
+            <div className={`${row} mb-5`}>
+              <div className="text-[11px] leading-snug">
+                <div className="text-sm font-semibold mb-0.5">👑 Last Snake Standing</div>
+                <div className={muted}>
+                  Huge {BR_GRID}×{BR_GRID} map with a camera + minimap. The safe zone shrinks every {ZONE_INTERVAL_MS / 1000}s (5s warning). Outside it you have 3s to get back. Needs {BR_MIN_PLAYERS}+ players.
+                </div>
+              </div>
+            </div>
+            <div className={`text-xs font-semibold mb-2 ${muted}`}>ARENA</div>
+            <div className={`${row} mb-1`}>
+              <div>
+                <div className="text-sm font-semibold">Grid</div>
+                <div className={`text-[11px] ${muted}`}>Show grid lines in the arena</div>
+              </div>
+              <Toggle on={settings.grid} onChange={(v) => onChange({ grid: v })} darkMode={darkMode} />
+            </div>
+          </>
+        ) : (
+        <>
         {/* Map */}
         <div className={`text-xs font-semibold mb-2 ${muted}`}>MAP</div>
         {ranked ? (
@@ -207,6 +259,8 @@ function SettingsPanel({
           </div>
           <Toggle on={ranked ? true : settings.avoidCollision} onChange={(v) => onChange({ avoidCollision: v })} darkMode={darkMode} disabled={ranked} />
         </div>
+        </>
+        )}
 
         <Button onClick={onClose} className="w-full mt-6 h-11 rounded-xl font-semibold bg-gradient-to-r from-emerald-500 to-emerald-400 text-white">
           Done
@@ -324,13 +378,16 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
   const isHost = !!room && room.hostId === playerId
   const isGlobal = !!room?.isPublic
   // Ranked Elo needs RANKED_MIN_PLAYERS, so a ranked global room waits for that many before its countdown starts
-  const minToStart = room?.isRanked ? Math.max(BATTLE_MIN_PLAYERS, RANKED_MIN_PLAYERS) : BATTLE_MIN_PLAYERS
   const settings = getRoomSettings(room)
+  const isRoyale = settings.mode === "royale"
+  // Battle Royale needs BR_MIN_PLAYERS (4); classic needs 2; ranked Elo needs RANKED_MIN_PLAYERS
+  const startMin = isRoyale ? BR_MIN_PLAYERS : BATTLE_MIN_PLAYERS
+  const minToStart = isRoyale ? BR_MIN_PLAYERS : room?.isRanked ? Math.max(BATTLE_MIN_PLAYERS, RANKED_MIN_PLAYERS) : BATTLE_MIN_PLAYERS
   const autoStartAt = room?.autoStartAt ?? null
   const secondsLeft = autoStartAt ? Math.max(0, Math.ceil((autoStartAt - (now + serverOffset)) / 1000)) : null
 
   // Share room state + actions with the bottom-right action bar (Start / Leave Room live there too)
-  const canStartNow = screen === "lobby" && isHost && !loading && players.length >= BATTLE_MIN_PLAYERS
+  const canStartNow = screen === "lobby" && isHost && !loading && players.length >= startMin
   if (actionsRef) actionsRef.current = { start: () => { void handleStartBattle() }, leave: () => handleLeaveAndExit() }
   const onRoomInfoRef = useRef(onRoomInfo)
   onRoomInfoRef.current = onRoomInfo
@@ -340,9 +397,9 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
       isHost: screen === "lobby" && isHost,
       canStart: canStartNow,
       starting: loading,
-      minPlayers: BATTLE_MIN_PLAYERS,
+      minPlayers: startMin,
     })
-  }, [screen, code, isHost, canStartNow, loading])
+  }, [screen, code, isHost, canStartNow, loading, startMin])
   useEffect(() => () => { onRoomInfoRef.current?.(NO_LOBBY_ROOM) }, [])
 
   // Settings panel is host-only and lobby-only
@@ -353,7 +410,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
   const handleSettingsChange = (patch: Partial<MpSettings>) => {
     if (!isHost || !code) return
     // Ranked rules are fixed: teleport + avoid-collision stay ON no matter what the host taps
-    if (room?.isRanked) patch = { ...patch, teleport: true, avoidCollision: true }
+    if (room?.isRanked) patch = { ...patch, teleport: true, avoidCollision: true, mode: "classic" }
     updateRoomSettings(code, patch).catch(() => setError("Could not save settings. Check your connection."))
   }
 
@@ -573,7 +630,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
 
   const handleStartBattle = async () => {
     // Only the host may start the match (UI is disabled for everybody else, this is the safety net)
-    if (!isHost || players.length < BATTLE_MIN_PLAYERS) return
+    if (!isHost || players.length < startMin) return
     setLoading(true)
     setError("")
     try {
@@ -687,7 +744,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
               </div>
             )}
             <p className={`mt-3 text-[11px] text-center ${darkMode ? "text-white/40" : "text-black/40"}`}>
-              Only online friends can be invited · invite expires in 5 min
+              Only online friends can be invited · invite expires in 5 seconds
             </p>
           </div>
         </div>
@@ -930,9 +987,15 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
 
             {/* Current room settings (everyone sees them) */}
             <p className={`-mt-2 text-center text-[11px] ${darkMode ? "text-white/50" : "text-black/50"}`}>
-              Map: {room?.isRanked ? "🎲 Random (changes every match)" : getBattleMap(settings.map).name}
-              {settings.teleport ? " · Teleport" : ""}
-              {settings.avoidCollision ? " · No collision" : ""}
+              {isRoyale && !room?.isRanked ? (
+                <>👑 Battle Royale · {BR_GRID}×{BR_GRID} · needs {BR_MIN_PLAYERS}+ players</>
+              ) : (
+                <>
+                  Map: {room?.isRanked ? "🎲 Random (changes every match)" : getBattleMap(settings.map).name}
+                  {settings.teleport ? " · Teleport" : ""}
+                  {settings.avoidCollision ? " · No collision" : ""}
+                </>
+              )}
               {!isHost ? " · set by host" : ""}
             </p>
 

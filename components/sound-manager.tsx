@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useEffect } from "react"
+import { useRef, useEffect, useCallback } from "react"
 
 interface SoundManagerProps {
   enabled?: boolean
@@ -41,42 +41,47 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
     }
   }, [])
 
-  const withVolume = (el: HTMLAudioElement | null, base = 1) => {
-    if (el) el.volume = Math.min(1, Math.max(0, base * volumeRef.current))
-    return el
-  }
+  // v19.0.1 audit fix: memoize all callbacks so the game-loop effect in
+  // snake-game.tsx (which lists them as deps) doesn't re-run on every render.
+  const withVolume = useCallback(
+    (el: HTMLAudioElement | null, base = 1) => {
+      if (el) el.volume = Math.min(1, Math.max(0, base * volumeRef.current))
+      return el
+    },
+    [],
+  )
 
-  const playWalkSound = () => {
+  const playWalkSound = useCallback(() => {
     if (enabledRef.current && walkSoundRef.current) {
       // Clone the audio to allow overlapping sounds
       const walkSound = withVolume(walkSoundRef.current.cloneNode() as HTMLAudioElement, 0.3)
       walkSound?.play().catch((err) => console.error("Error playing walk sound:", err))
     }
-  }
+  }, [withVolume])
 
-  const playFoodSound = () => {
+  const playFoodSound = useCallback(() => {
     const el = withVolume(enabledRef.current ? foodSoundRef.current : null)
     if (el) {
       el.currentTime = 0
       el.play().catch((err) => console.error("Error playing food sound:", err))
     }
-  }
+  }, [withVolume])
 
-  const playGameOverSound = () => {
+  const playGameOverSound = useCallback(() => {
     const el = withVolume(enabledRef.current ? gameOverSoundRef.current : null)
     if (el) {
       el.currentTime = 0
       el.play().catch((err) => console.error("Error playing game over sound:", err))
     }
-  }
+  }, [withVolume])
 
-  const playGameStartSound = () => {
+  const playGameStartSound = useCallback(() => {
     const el = withVolume(enabledRef.current ? gameStartSoundRef.current : null)
     if (el) {
       el.currentTime = 0
       el.play().catch((err) => console.error("Error playing game start sound:", err))
     }
-  }
+  }, [withVolume])
 
   return {
     playWalkSound,

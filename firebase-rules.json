@@ -130,12 +130,15 @@
     },
     // Currency gifts from the admin panel: grants/{uid} = { coins, gems, at, by }.
     // Only the recipient can read their own grant; only admins can write.
-    // The player's own client claims it (adds coins/gems, then deletes the node).
+    // The player's own client claims it (deletes the node FIRST, then adds
+    // coins/gems) — v19.0.1 audit fix: without the delete-only write below,
+    // the recipient's remove() was always permission-denied, the grant node
+    // lived forever, and the gift was re-credited on every login.
     "grants": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && (root.child('playerIds').child('IOXN75FA').val() === auth.uid || root.child('admins').child(auth.uid).val() === true)",
-        ".validate": "newData.hasChildren(['coins', 'gems'])"
+        ".write": "auth != null && (root.child('playerIds').child('IOXN75FA').val() === auth.uid || root.child('admins').child(auth.uid).val() === true || (auth.uid === $uid && !newData.exists()))",
+        ".validate": "!newData.exists() || newData.hasChildren(['coins', 'gems'])"
       }
     },
 

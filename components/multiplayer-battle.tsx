@@ -352,8 +352,12 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
         break
       }
     }
-    // Self
-    if (snakeRef.current.some((s, i) => i > 0 && s.x === newHead.x && s.y === newHead.y)) {
+    // Self — the tail cell vacates this tick unless pending growth keeps it
+    // (v19.0.1 audit fix: false "self" deaths when the head moves into the cell
+    // the tail just left). eat() runs after this check and adds growth, so the
+    // growthRef value here already decides whether the tail pops this tick.
+    const myBody = growthRef.current > 0 ? snakeRef.current : snakeRef.current.slice(0, -1)
+    if (myBody.some((s, i) => i > 0 && s.x === newHead.x && s.y === newHead.y)) {
       die("self")
       return
     }

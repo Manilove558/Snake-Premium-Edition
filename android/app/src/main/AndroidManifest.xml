@@ -42,4 +42,6 @@
     <!-- Voice chat (mic) ke liye — bina inke WebView mic permission deny kar deta hai -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- v19.0.1 audit fix: haptic feedback (triggerHaptic) needs this on Android -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

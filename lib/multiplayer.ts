@@ -12,6 +12,7 @@ import {
 } from "firebase/database"
 import { getFirebaseDb } from "./firebase"
 import { BATTLE_MAPS, getBattleMap, blockedCellKeys } from "./battle-maps"
+import { startBattleRoyale } from "./br/net"
 
 // ---------------------------------------------------------------------------
 // Multiplayer rooms (Phase 1: lobby — create / join / live player list)
@@ -35,10 +36,19 @@ export interface MpPlayer {
   uid?: string | null
   /** VIP Pass holder — shown with a crown next to the name */
   vip?: boolean
+  /** Battle Royale stats */
+  kills?: number
+  /** server time (ms) when this player was eliminated (Battle Royale) */
+  diedAt?: number | null
 }
+
+/** Game mode picked by the host in Room Settings. */
+export type MpMode = "classic" | "royale"
 
 /** Host-controlled room settings (stored at rooms/{CODE}/settings). */
 export interface MpSettings {
+  /** "classic" = 20x20 arena (default), "royale" = Snake Battle Royale (120x120, shrinking zone, 4-8 players) */
+  mode: MpMode
   /** battle map id, see lib/battle-maps.ts */
   map: string
   /** true: snakes wrap around the edges instead of dying on the wall */
@@ -50,6 +60,7 @@ export interface MpSettings {
 }
 
 export const DEFAULT_MP_SETTINGS: MpSettings = {
+  mode: "classic",
   map: "classic",
   teleport: false,
   grid: true,
@@ -57,9 +68,11 @@ export const DEFAULT_MP_SETTINGS: MpSettings = {
 }
 
 /** Room settings with defaults filled in (older rooms have none). */
-export function getRoomSettings(room?: { settings?: Partial<MpSettings> | null } | null): MpSettings {
+export function getRoomSettings(room?: { settings?: Partial<MpSettings> | null; isRanked?: boolean } | null): MpSettings {
   const s = room?.settings ?? {}
   return {
+    // Ranked rooms are always classic
+    mode: !room?.isRanked && s.mode === "royale" ? "royale" : "classic",
     map: BATTLE_MAPS.some((m) => m.id === s.map) ? (s.map as string) : DEFAULT_MP_SETTINGS.map,
     teleport: typeof s.teleport === "boolean" ? s.teleport : DEFAULT_MP_SETTINGS.teleport,
     grid: typeof s.grid === "boolean" ? s.grid : DEFAULT_MP_SETTINGS.grid,
@@ -85,6 +98,14 @@ export interface MpRoom {
     food?: { x: number; y: number } | null
     winner?: string | null
     killFeed?: Record<string, KillEntry> | null
+    /** Battle Royale: zone clock (seed + server start time), see lib/br/zone.ts */
+    zone?: { seed: number; startAt: number } | null
+    /** Battle Royale: player ids in spawn-seat order (fixed at match start) */
+    order?: string[] | null
+    /** Battle Royale: many foods instead of one */
+    foods?: Record<string, { x: number; y: number }> | null
+    /** Battle Royale: server time (ms) when the last snake won */
+    endedAt?: number | null
   } | null
 }
 
@@ -282,7 +303,7 @@ export interface KillEntry {
   killerName: string
   victimId: string
   victimName: string
-  cause: "kill" | "wall" | "self"
+  cause: "kill" | "wall" | "self" | "zone"
   ts: number
 }
 
@@ -330,6 +351,7 @@ function pickStartFood(mapId: string): { x: number; y: number } {
 /** Host changes one or more room settings (only lobby). */
 export async function updateRoomSettings(code: string, patch: Partial<MpSettings>): Promise<void> {
   const updates: Record<string, unknown> = {}
+  if (patch.mode !== undefined && (patch.mode === "classic" || patch.mode === "royale")) updates["settings/mode"] = patch.mode
   if (patch.map !== undefined && BATTLE_MAPS.some((m) => m.id === patch.map)) updates["settings/map"] = patch.map
   if (patch.teleport !== undefined) updates["settings/teleport"] = !!patch.teleport
   if (patch.grid !== undefined) updates["settings/grid"] = !!patch.grid
@@ -345,6 +367,8 @@ export async function startBattle(code: string): Promise<void> {
   if (!snap.exists()) throw new Error("Room not found")
   const room = snap.val() as Omit<MpRoom, "code">
   const players = Object.values(room.players ?? {}) as MpPlayer[]
+  // Battle Royale has its own start (zone clock, many foods, 4-8 players)
+  if (!room.isRanked && getRoomSettings(room).mode === "royale") return startBattleRoyale(code, room)
   if (players.length < BATTLE_MIN_PLAYERS) throw new Error(`Need at least ${BATTLE_MIN_PLAYERS} players to start`)
 
   // Ranked rooms: the arena is drawn at random for EVERY match (nobody picks the map)
@@ -388,6 +412,8 @@ export async function resetRoomForRematch(code: string): Promise<void> {
   for (const p of players) {
     updates[`players/${p.id}/alive`] = true
     updates[`players/${p.id}/score`] = 0
+    updates[`players/${p.id}/kills`] = 0
+    updates[`players/${p.id}/diedAt`] = null
   }
   await update(rRef, updates)
 }

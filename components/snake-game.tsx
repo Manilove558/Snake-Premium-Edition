@@ -17,7 +17,7 @@ import { SnakeProfile } from "./snake-profile"
 import { SnakeFriends } from "./snake-friends"
 import { useStore, equippedItem, loadCatalog, earnCoins, earnGems, setBest } from "@/lib/store"
 import { shapePath } from "@/lib/shapes"
-import MultiplayerBattle from "./multiplayer-battle"
+import BattleRouter from "./battle-router" // picks classic MultiplayerBattle or RoyaleBattle from the room mode
 import { RankPopup, MapPopup, SettingsPopup } from "./home-popups"
 import { RotateHint } from "./rotate-hint"
 import { PanelHostContext, type ViewId } from "./panel-host"
@@ -596,13 +596,16 @@ export default function SnakeGame() {
   useEffect(() => { if (store.best > highScore) setHighScore(store.best) }, [store.best]) // eslint-disable-line react-hooks/exhaustive-deps
   // Admin-managed store catalog (skins/trails/avatars edited from the admin panel)
   useEffect(() => { loadCatalog() }, [])
-  // Admin currency gifts: claimed live, or on next login via the same subscription
+  // Admin currency gifts: claimed live, or on next login via the same subscription.
+  // v19.0.1 audit fix: delete the grant node FIRST and credit only if the
+  // delete committed — otherwise a failed delete re-credits on every login.
   useEffect(() => {
     if (!user) return
     const uid = user.uid
-    return subscribeGrants(uid, (g) => {
+    return subscribeGrants(uid, async (g) => {
+      const consumed = await consumeGrant(uid)
+      if (!consumed) return
       applyGrant(g)
-      consumeGrant(uid)
       setToast(`🎁 Admin gift: +${g.coins.toLocaleString()} coins, +${g.gems.toLocaleString()} gems!`)
       setTimeout(() => setToast(""), 4000)
     })
@@ -1112,9 +1115,10 @@ export default function SnakeGame() {
 
     const moveSnake = () => {
       // Play walk sound when snake moves
-      playWalkSound()
-      // Short vibration when moving
-      triggerHaptic(10)
+      // v19.0.1 audit fix: NO per-tick walk sound / haptic here. Every tick par
+      // buzz + audio clone chalane se phone constantly vibrate karta tha aur
+      // har tick par naya Audio node allocate hota tha. Sound/haptic sirf food
+      // eat aur game over par hote hain (neeche ateFood / doGameOver me dekho).
 
       // Process the next direction from the queue if available
       if (directionQueueRef.current.length > 0) {
@@ -1200,14 +1204,17 @@ export default function SnakeGame() {
         }
       }
 
-      // Check for collision with self
-      if (prevSnake.some((segment) => segment.x === newHead.x && segment.y === newHead.y)) {
+      // Decide food BEFORE the self check so we know whether the tail vacates this tick
+      const ateFood = newHead.x === foodRef.current.x && newHead.y === foodRef.current.y
+
+      // Check for collision with self — the tail cell vacates this tick unless we're
+      // growing, so exclude it (v19.0.1 audit fix: false "ate my own tail" deaths
+      // when the head moves into the cell the tail just left).
+      const bodyToCheck = ateFood ? prevSnake : prevSnake.slice(0, -1)
+      if (bodyToCheck.some((segment) => segment.x === newHead.x && segment.y === newHead.y)) {
         doGameOver()
         return
       }
-
-      // Decide food BEFORE the state update so setSnake stays side-effect free
-      const ateFood = newHead.x === foodRef.current.x && newHead.y === foodRef.current.y
 
       if (ateFood) {
         // Play food sound
@@ -1248,15 +1255,17 @@ export default function SnakeGame() {
     // This effect re-runs on every score/timer tick, and clearing them here killed
     // the mode timers right after they started (reverse/timed never worked).
     // They are stopped explicitly on game over, on exit, and on a fresh initGame.
+    // COUNTDOWN is also NOT cleared here on purpose (v19.0.1 audit fix):
+    // initGame's own setCountdown(3) re-runs this effect, and clearing
+    // countdownRef here killed the countdown interval milliseconds after it was
+    // created — the game froze at "3" forever. The countdown clears itself at 0;
+    // initGame / exitGame / unmount clear it explicitly.
     return () => {
       if (gameLoopRef.current) {
         clearInterval(gameLoopRef.current)
       }
       if (directionChangeTimeoutRef.current) {
         clearTimeout(directionChangeTimeoutRef.current)
-      }
-      if (countdownRef.current) {
-        clearInterval(countdownRef.current)
       }
     }
   }, [
@@ -2315,7 +2324,7 @@ export default function SnakeGame() {
         frameEl,
       )}
       {mpView === "battle" && mpSession && (
-        <MultiplayerBattle
+        <BattleRouter
           code={mpSession.code}
           playerId={mpSession.playerId}
           darkMode={darkMode}

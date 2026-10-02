@@ -50,8 +50,15 @@ export function subscribeGrants(uid: string, onGrant: (g: Grant) => void): () =>
   })
 }
 
-export async function consumeGrant(uid: string): Promise<void> {
-  await remove(ref(getFirebaseDb(), `grants/${uid}`)).catch(() => {})
+/** Delete the pending grant node. Returns true only if the delete committed,
+ *  so the caller credits the wallet only after a successful claim (claim-once). */
+export async function consumeGrant(uid: string): Promise<boolean> {
+  try {
+    await remove(ref(getFirebaseDb(), `grants/${uid}`))
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Apply a grant to the local wallet (exact amounts, cloud sync happens via the store subscription). */

@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { usePanelState, usePanelTarget } from "./panel-host"
 import { ShoppingBag, ChevronLeft, Check, Plus, X, Lock, Crown, Gift } from "lucide-react"
@@ -40,6 +40,20 @@ export function SnakeStore() {
   const [msg, setMsg] = useState("")
   const [sheet, setSheet] = useState<null | "gems" | "coins">(null)
   const [busy, setBusy] = useState<string | null>(null)
+  // v19.0.1 audit fix: synchronous double-tap guard. React state `busy` updates
+  // async — do rapid taps par doosra tap pehle wale ke setBusy se pehle fire ho
+  // kar doosra Play sheet khol deta tha. Ye ref turant set hota hai.
+  const busyRef = useRef<string | null>(null)
+  const claimBusy = (key: string) => {
+    if (busyRef.current) return false
+    busyRef.current = key
+    setBusy(key)
+    return true
+  }
+  const releaseBusy = () => {
+    busyRef.current = null
+    setBusy(null)
+  }
   // Demo-mode confirm dialog: { kind: "item", it } for ₹ items, { kind: "gems", packId } for gem packs.
   // Only used when payMode === "demo" (no real money) so a stray tap doesn't instantly grant a paid item.
   const [confirmBuy, setConfirmBuy] = useState<null | { kind: "item"; it: StoreItem } | { kind: "gems"; packId: string }>(null)
@@ -72,12 +86,11 @@ export function SnakeStore() {
 
   /** Real-money purchase of a store item via the Google Play sheet (UPI / cards / redeem code). */
   const buyReal = async (it: StoreItem) => {
-    if (busy) return
+    if (!claimBusy(it.id)) return // double-tap guard (synchronous)
     const blocked = grantBlocker(it.id)
-    if (blocked) { flash(blocked); return }
+    if (blocked) { flash(blocked); releaseBusy(); return }
     const uid = user?.uid
-    if (!uid) { flash("Pehle login karo"); return }
-    setBusy(it.id)
+    if (!uid) { flash("Pehle login karo"); releaseBusy(); return }
     try {
       const sku = skuForItem(it.id)
       const r = await purchaseSku(sku, uid)
@@ -85,17 +98,16 @@ export function SnakeStore() {
       const g = grantAfterPurchaseItem(it.id)
       if (g.ok) void logPurchase(uid, { sku, orderId: r.orderId!, kind: it.kind, ref: it.id })
       flash(g.ok ? g.msg : `Paise kat gaye, item nahi mila — Order ID ${r.orderId} support ko bhejo`)
-    } finally { setBusy(null) }
+    } finally { releaseBusy() }
   }
 
   /** Real-money purchase of a gem pack via the Google Play sheet. */
   const buyGemPackFlow = async (packId: string) => {
     // Demo mode: confirm first, grant only after the user taps Confirm.
     if (payMode !== "play") { setConfirmBuy({ kind: "gems", packId }); return }
-    if (busy) return
+    if (!claimBusy(`gems_${packId}`)) return // double-tap guard (synchronous)
     const uid = user?.uid
-    if (!uid) { flash("Pehle login karo"); return }
-    setBusy(`gems_${packId}`)
+    if (!uid) { flash("Pehle login karo"); releaseBusy(); return }
     try {
       const sku = skuForGemPack(packId)
       const r = await purchaseSku(sku, uid)
@@ -103,7 +115,7 @@ export function SnakeStore() {
       const g = grantAfterPurchaseGems(packId)
       if (g.ok) void logPurchase(uid, { sku, orderId: r.orderId!, kind: "gems", ref: packId })
       flash(g.ok ? g.msg : `Paise kat gaye, gems nahi mile — Order ID ${r.orderId} support ko bhejo`)
-    } finally { setBusy(null) }
+    } finally { releaseBusy() }
   }
 
   /** Demo-mode confirm: grant the item / gems only after the user taps Confirm. */
