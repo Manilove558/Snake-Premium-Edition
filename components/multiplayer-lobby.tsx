@@ -20,9 +20,14 @@ import {
   normalizeRoomCode,
   MAX_MP_PLAYERS,
   BATTLE_MIN_PLAYERS,
+  BOT_FILL_TARGET,
+  botFillCount,
+  isBotPlayer,
   type MpRoom,
   type MpSettings,
 } from "@/lib/multiplayer"
+import { BOT_DIFFICULTY, BOT_LEVELS } from "@/lib/bot-ai"
+import { BotTag } from "./bot-tag"
 import { BATTLE_MAPS, getBattleMap, type BattleMap } from "@/lib/battle-maps"
 import { BR_MIN_PLAYERS, BR_MAX_PLAYERS, BR_GRID, ZONE_INTERVAL_MS } from "@/lib/br/constants"
 import { useAuthUser } from "@/lib/auth"
@@ -262,6 +267,40 @@ function SettingsPanel({
         </>
         )}
 
+        {/* AI bots: fill empty slots when the battle starts (never in ranked rooms) */}
+        {!ranked && (
+          <>
+            <div className={`text-xs font-semibold mt-5 mb-2 ${muted}`}>AI BOTS</div>
+            <div className={row}>
+              <div>
+                <div className="text-sm font-semibold">🤖 Fill empty slots</div>
+                <div className={`text-[11px] ${muted}`}>
+                  Bots join at start up to {BOT_FILL_TARGET[settings.mode]} players
+                </div>
+              </div>
+              <Toggle on={settings.bots} onChange={(v) => onChange({ bots: v })} darkMode={darkMode} />
+            </div>
+            {settings.bots && (
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                {BOT_LEVELS.map((lv) => {
+                  const active = settings.botLevel === lv
+                  return (
+                    <button
+                      key={lv}
+                      onClick={() => onChange({ botLevel: lv })}
+                      className={`py-2 rounded-xl border-2 text-[12px] font-bold transition-colors ${
+                        active ? "border-emerald-500 bg-emerald-500/10 text-emerald-500" : darkMode ? "border-white/10 hover:border-white/30" : "border-black/10 hover:border-black/30"
+                      }`}
+                    >
+                      {BOT_DIFFICULTY[lv].label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </>
+        )}
+
         <Button onClick={onClose} className="w-full mt-6 h-11 rounded-xl font-semibold bg-gradient-to-r from-emerald-500 to-emerald-400 text-white">
           Done
         </Button>
@@ -381,8 +420,12 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
   const settings = getRoomSettings(room)
   const isRoyale = settings.mode === "royale"
   // Battle Royale needs BR_MIN_PLAYERS (4); classic needs 2; ranked Elo needs RANKED_MIN_PLAYERS
-  const startMin = isRoyale ? BR_MIN_PLAYERS : BATTLE_MIN_PLAYERS
-  const minToStart = isRoyale ? BR_MIN_PLAYERS : room?.isRanked ? Math.max(BATTLE_MIN_PLAYERS, RANKED_MIN_PLAYERS) : BATTLE_MIN_PLAYERS
+  // With "Fill empty slots" on, one human is enough: bots top the room up when the battle starts
+  const botsOn = settings.bots && !room?.isRanked
+  const humanCount = players.filter((p) => !isBotPlayer(p)).length
+  const botsToJoin = botsOn ? botFillCount(settings.mode, humanCount) : 0
+  const startMin = botsOn ? 1 : isRoyale ? BR_MIN_PLAYERS : BATTLE_MIN_PLAYERS
+  const minToStart = botsOn ? 1 : isRoyale ? BR_MIN_PLAYERS : room?.isRanked ? Math.max(BATTLE_MIN_PLAYERS, RANKED_MIN_PLAYERS) : BATTLE_MIN_PLAYERS
   const autoStartAt = room?.autoStartAt ?? null
   const secondsLeft = autoStartAt ? Math.max(0, Math.ceil((autoStartAt - (now + serverOffset)) / 1000)) : null
 
@@ -967,7 +1010,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
                       className={`font-medium truncate flex-1 min-w-0 ${p.uid ? "cursor-pointer" : ""}`}
                       onClick={() => p.uid && openPlayerProfile(p.uid)}
                     >
-                      {p.vip && <VipCrown className="h-3 w-3" />}{p.name}
+                      {isBotPlayer(p) && <BotTag />}{p.vip && <VipCrown className="h-3 w-3" />}{p.name}
                     </span>
                     {p.id !== playerId && <FriendAction targetUid={p.uid} />}
                     {isHost && p.id === playerId && (
@@ -999,6 +1042,12 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
               {!isHost ? " · set by host" : ""}
             </p>
 
+            {botsToJoin > 0 && (
+              <p className={`-mt-2 text-center text-[11px] ${darkMode ? "text-white/50" : "text-black/50"}`}>
+                🤖 {botsToJoin} {BOT_DIFFICULTY[settings.botLevel].label} bot{botsToJoin > 1 ? "s" : ""} will fill the empty slots when the battle starts
+              </p>
+            )}
+
             {/* Voice chat */}
             <VoiceChat code={code} playerId={playerId} playerName={playerName || "Player"} darkMode={darkMode} />
 
@@ -1013,7 +1062,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
                     <Loader2 className="w-4 h-4 animate-spin text-emerald-500" /> Searching for players…{room?.isRanked ? ` (${players.length}/${minToStart})` : ""}
                   </>
                 ) : (
-                  <>Battle starts in {secondsLeft ?? Math.ceil(GLOBAL_AUTOSTART_MS / 1000)}s</>
+                  <>Battle starts in {secondsLeft ?? Math.ceil(GLOBAL_AUTOSTART_MS / 1000)}s{botsToJoin > 0 ? " · bots fill empty slots" : ""}</>
                 )}
               </div>
             )}

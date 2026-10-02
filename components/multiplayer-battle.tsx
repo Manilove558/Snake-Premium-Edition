@@ -20,11 +20,14 @@ import {
   BATTLE_KILL_SCORE,
   BATTLE_SNAKE_STALE_MS,
   getRoomSettings,
+  isBotPlayer,
   type MpRoom,
   type MpSnakeState,
   type KillEntry,
 } from "@/lib/multiplayer"
 import { getBattleMap } from "@/lib/battle-maps"
+import { useBotHost } from "@/hooks/use-bot-host"
+import { BotTag } from "./bot-tag"
 import { claimRankRewards } from "@/lib/store"
 import VoiceChat from "./voice-chat"
 import { FriendAction } from "./snake-friends"
@@ -148,6 +151,8 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   phaseRef.current = phase
   const myPlayer = room?.players?.[playerId] ?? null
   const isHost = room?.hostId === playerId
+  // AI bots: the host's browser drives them through the normal snake sync (no-op in rooms without bots)
+  useBotHost(code, playerId, room)
 
   // Host-chosen room settings: map (walls / portals), teleport, grid, snake collision
   const settings = getRoomSettings(room)
@@ -788,12 +793,13 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   const leaderboard = Object.values(room?.players ?? {}).sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
   const winner = room?.status === "ended" ? room.players?.[room.game?.winner ?? ""] : null
 
+  const nm = (id: string | null, name: string) => (id && isBotPlayer({ id, bot: room?.players?.[id]?.bot }) ? `${name} [BOT]` : name)
   const killText = (k: KillEntry) =>
     k.cause === "kill"
-      ? `${k.killerName} eliminated ${k.victimName}`
+      ? `${nm(k.killerId, k.killerName)} eliminated ${nm(k.victimId, k.victimName)}`
       : k.cause === "wall"
-        ? `${k.victimName} hit the wall`
-        : `${k.victimName} crashed into themselves`
+        ? `${nm(k.victimId, k.victimName)} hit the wall`
+        : `${nm(k.victimId, k.victimName)} crashed into themselves`
 
   const glassBox = "bg-white/70 dark:bg-white/5 border border-black/5 dark:border-white/10"
   const dpadBtn = `${glassBox} d-pad-btn w-full h-full min-h-[48px] min-w-[48px] rounded-2xl flex items-center justify-center active:scale-95 transition-transform`
@@ -854,7 +860,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
                     return (
                       <div key={p.id} className="flex flex-wrap items-center justify-center gap-2 text-sm text-white">
                         <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-                        <span className="font-medium">{p.vip && <VipCrown className="h-3.5 w-3.5" />}{p.name}</span>
+                        <span className="font-medium">{isBotPlayer(p) && <BotTag />}{p.vip && <VipCrown className="h-3.5 w-3.5" />}{p.name}</span>
                         <span className="font-bold">{p.score ?? 0}</span>
                         {rr && <RatingDelta delta={rr.delta} />}
                         {rr && <TierBadge elo={rr.newElo} />}
@@ -1009,7 +1015,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
               >
                 {i === 0 ? <Crown className="w-3 h-3 shrink-0 text-amber-500" /> : <span className="w-3 shrink-0 text-[9px] font-bold opacity-40 text-center">{i + 1}</span>}
                 <span className="w-2.5 h-2.5 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
-                <span className="font-semibold truncate flex-1 min-w-0">{p.vip && <VipCrown className="h-3 w-3" />}{p.name}</span>
+                <span className="font-semibold truncate flex-1 min-w-0">{isBotPlayer(p) && <BotTag />}{p.vip && <VipCrown className="h-3 w-3" />}{p.name}</span>
                 {!p.alive && <Skull className="w-3 h-3 shrink-0 opacity-70" />}
                 <span className="font-extrabold tabular-nums">{p.score ?? 0}</span>
               </div>
