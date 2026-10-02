@@ -20,7 +20,6 @@ import {
   BATTLE_KILL_SCORE,
   BATTLE_SNAKE_STALE_MS,
   getRoomSettings,
-  playerDisplayName,
   type MpRoom,
   type MpSnakeState,
   type KillEntry,
@@ -43,7 +42,6 @@ import {
 } from "@/lib/ranked"
 import { armDisconnectPenalty, fetchRankedRecords, isGoogleUser, writeRankedUpdates, type RankedWrite } from "@/lib/ranked-db"
 import { VipCrown } from "./vip-crown"
-import { useBotHost } from "@/hooks/use-bot-host"
 
 const CELL = 18 // battle arena render size (bigger on phones)
 const BW = 20
@@ -123,9 +121,6 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   })
   const soundRef = useRef({ playFoodSound, playGameOverSound, playGameStartSound })
   soundRef.current = { playFoodSound, playGameOverSound, playGameStartSound }
-
-  // Host simulates every AI bot in the room (no-op unless I am the host)
-  useBotHost(code, playerId)
 
   // Mutable game state (used inside the tick loop)
   const snakeRef = useRef<Seg[]>([])
@@ -793,15 +788,12 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   const leaderboard = Object.values(room?.players ?? {}).sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
   const winner = room?.status === "ended" ? room.players?.[room.game?.winner ?? ""] : null
 
-  const killText = (k: KillEntry) => {
-    const kn = k.killerId ? playerDisplayName(room?.players?.[k.killerId], k.killerName) : k.killerName
-    const vn = playerDisplayName(room?.players?.[k.victimId], k.victimName)
-    return k.cause === "kill"
-      ? `${kn} eliminated ${vn}`
+  const killText = (k: KillEntry) =>
+    k.cause === "kill"
+      ? `${k.killerName} eliminated ${k.victimName}`
       : k.cause === "wall"
-        ? `${vn} hit the wall`
-        : `${vn} crashed into themselves`
-  }
+        ? `${k.victimName} hit the wall`
+        : `${k.victimName} crashed into themselves`
 
   const glassBox = "bg-white/70 dark:bg-white/5 border border-black/5 dark:border-white/10"
   const dpadBtn = `${glassBox} d-pad-btn w-full h-full min-h-[48px] min-w-[48px] rounded-2xl flex items-center justify-center active:scale-95 transition-transform`
@@ -854,7 +846,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
             <div className="absolute inset-0 flex overflow-y-auto bg-black/60 rounded-2xl">
               <div className="m-auto text-center px-3 py-2">
                 <Trophy className="w-10 h-10 text-amber-400 mx-auto mb-2" />
-                <div className="text-white font-bold text-lg">{winner ? `${playerDisplayName(winner)} wins!` : "Battle over!"}</div>
+                <div className="text-white font-bold text-lg">{winner ? `${winner.name} wins!` : "Battle over!"}</div>
                 <div className="text-white/70 text-xs mt-1">Scores</div>
                 <div className="mt-2 flex flex-col gap-1 max-h-32 overflow-y-auto">
                   {leaderboard.map((p) => {
@@ -862,7 +854,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
                     return (
                       <div key={p.id} className="flex flex-wrap items-center justify-center gap-2 text-sm text-white">
                         <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-                        <span className="font-medium">{p.vip && <VipCrown className="h-3.5 w-3.5" />}{playerDisplayName(p)}</span>
+                        <span className="font-medium">{p.vip && <VipCrown className="h-3.5 w-3.5" />}{p.name}</span>
                         <span className="font-bold">{p.score ?? 0}</span>
                         {rr && <RatingDelta delta={rr.delta} />}
                         {rr && <TierBadge elo={rr.newElo} />}
@@ -1017,7 +1009,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
               >
                 {i === 0 ? <Crown className="w-3 h-3 shrink-0 text-amber-500" /> : <span className="w-3 shrink-0 text-[9px] font-bold opacity-40 text-center">{i + 1}</span>}
                 <span className="w-2.5 h-2.5 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
-                <span className="font-semibold truncate flex-1 min-w-0">{p.vip && <VipCrown className="h-3 w-3" />}{playerDisplayName(p)}</span>
+                <span className="font-semibold truncate flex-1 min-w-0">{p.vip && <VipCrown className="h-3 w-3" />}{p.name}</span>
                 {!p.alive && <Skull className="w-3 h-3 shrink-0 opacity-70" />}
                 <span className="font-extrabold tabular-nums">{p.score ?? 0}</span>
               </div>

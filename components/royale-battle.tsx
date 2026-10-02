@@ -27,7 +27,6 @@ import {
   BATTLE_KILL_SCORE,
   BATTLE_SNAKE_STALE_MS,
   getRoomSettings,
-  playerDisplayName,
   type MpRoom,
   type MpSnakeState,
   type KillEntry,
@@ -41,7 +40,6 @@ import { drawBrFrame, drawMinimap, type DrawSnake, type MinimapDot } from "@/lib
 import { isInsideZone } from "@/lib/br/zone"
 import { useRoyaleZone, useZoneDamageTracker } from "@/hooks/use-royale-zone"
 import { useBattleSteering } from "@/hooks/use-battle-steering"
-import { useBotHost } from "@/hooks/use-bot-host"
 import { destroyVoiceManager } from "@/lib/voice-chat"
 import { useSoundManager } from "./sound-manager"
 import VoiceChat from "./voice-chat"
@@ -128,9 +126,6 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
   const { playFoodSound, playGameOverSound, playGameStartSound } = useSoundManager({ enabled: soundEnabled, volume })
   const soundRef = useRef({ playFoodSound, playGameOverSound, playGameStartSound })
   soundRef.current = { playFoodSound, playGameOverSound, playGameStartSound }
-
-  // Host simulates every AI bot in the room (no-op unless I am the host)
-  useBotHost(code, playerId)
 
   const phase = room?.status ?? "lobby"
   phaseRef.current = phase
@@ -581,17 +576,14 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
   const glassBox = "bg-white/70 dark:bg-white/5 border border-black/5 dark:border-white/10"
   const dpadBtn = `${glassBox} d-pad-btn w-full h-full min-h-[48px] min-w-[48px] rounded-2xl flex items-center justify-center active:scale-95 transition-transform`
 
-  const killText = (k: KillEntry) => {
-    const kn = k.killerId ? playerDisplayName(room?.players?.[k.killerId], k.killerName) : k.killerName
-    const vn = playerDisplayName(room?.players?.[k.victimId], k.victimName)
-    return k.cause === "kill"
-      ? `${kn} eliminated ${vn}`
+  const killText = (k: KillEntry) =>
+    k.cause === "kill"
+      ? `${k.killerName} eliminated ${k.victimName}`
       : k.cause === "zone"
-        ? `${vn} was caught by the zone`
+        ? `${k.victimName} was caught by the zone`
         : k.cause === "wall"
-          ? `${vn} hit the wall`
-          : `${vn} crashed into themselves`
-  }
+          ? `${k.victimName} hit the wall`
+          : `${k.victimName} crashed into themselves`
 
   if (!centerEl || !sideEl || !leftEl) return null
 
@@ -717,7 +709,7 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
               >
                 {i === 0 && p.alive ? <Crown className="w-3 h-3 shrink-0 text-amber-500" /> : <span className="w-3 shrink-0 text-[9px] font-bold opacity-40 text-center">{i + 1}</span>}
                 <span className="w-2.5 h-2.5 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
-                <span className="font-semibold truncate flex-1 min-w-0">{p.vip && <VipCrown className="h-3 w-3" />}{playerDisplayName(p)}</span>
+                <span className="font-semibold truncate flex-1 min-w-0">{p.vip && <VipCrown className="h-3 w-3" />}{p.name}</span>
                 {!p.alive && <Skull className="w-3 h-3 shrink-0 opacity-70" />}
                 <span className="font-extrabold tabular-nums" title="kills">{p.kills ?? 0}</span>
               </div>
