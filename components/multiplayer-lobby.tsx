@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Users, Copy, Check, LogOut, WifiOff, X, Play, Globe, Plus, Loader2, Settings, UserPlus } from "lucide-react"
+import { Users, Copy, Check, LogOut, WifiOff, X, Play, Globe, Plus, Loader2, Settings, UserPlus, Bot } from "lucide-react"
 import {
   createRoom,
   joinRoom,
@@ -18,11 +18,15 @@ import {
   subscribeToRoom,
   startBattle,
   normalizeRoomCode,
+  addBot,
+  removeBot,
+  playerDisplayName,
   MAX_MP_PLAYERS,
   BATTLE_MIN_PLAYERS,
   type MpRoom,
   type MpSettings,
 } from "@/lib/multiplayer"
+import { BOT_DIFFICULTIES, BOT_DIFFICULTY_CONFIG, type BotDifficulty } from "@/lib/bot-ai"
 import { BATTLE_MAPS, getBattleMap, type BattleMap } from "@/lib/battle-maps"
 import { BR_MIN_PLAYERS, BR_MAX_PLAYERS, BR_GRID, ZONE_INTERVAL_MS } from "@/lib/br/constants"
 import { useAuthUser } from "@/lib/auth"
@@ -259,6 +263,43 @@ function SettingsPanel({
           </div>
           <Toggle on={ranked ? true : settings.avoidCollision} onChange={(v) => onChange({ avoidCollision: v })} darkMode={darkMode} disabled={ranked} />
         </div>
+
+        {/* AI bots — casual rooms only, never ranked */}
+        {!ranked && (
+          <>
+            <div className={`text-xs font-semibold mb-2 mt-5 ${muted}`}>AI BOTS</div>
+            <div className="flex flex-col gap-2">
+              <div className={row}>
+                <div>
+                  <div className="text-sm font-semibold">🤖 Fill empty slots with bots</div>
+                  <div className={`text-[11px] ${muted}`}>When the battle starts, every empty seat gets an AI snake</div>
+                </div>
+                <Toggle on={settings.fillBots} onChange={(v) => onChange({ fillBots: v })} darkMode={darkMode} />
+              </div>
+              <div className={row}>
+                <div>
+                  <div className="text-sm font-semibold">Bot difficulty</div>
+                  <div className={`text-[11px] ${muted}`}>How smart the AI snakes play</div>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  {BOT_DIFFICULTIES.map((d: BotDifficulty) => (
+                    <button
+                      key={d}
+                      onClick={() => onChange({ botDifficulty: d })}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors ${
+                        settings.botDifficulty === d
+                          ? "bg-emerald-500 text-white"
+                          : darkMode ? "bg-white/10 text-white/70 hover:bg-white/20" : "bg-black/10 text-black/60 hover:bg-black/15"
+                      }`}
+                    >
+                      {BOT_DIFFICULTY_CONFIG[d].label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
         </>
         )}
 
@@ -381,13 +422,15 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
   const settings = getRoomSettings(room)
   const isRoyale = settings.mode === "royale"
   // Battle Royale needs BR_MIN_PLAYERS (4); classic needs 2; ranked Elo needs RANKED_MIN_PLAYERS
-  const startMin = isRoyale ? BR_MIN_PLAYERS : BATTLE_MIN_PLAYERS
   const minToStart = isRoyale ? BR_MIN_PLAYERS : room?.isRanked ? Math.max(BATTLE_MIN_PLAYERS, RANKED_MIN_PLAYERS) : BATTLE_MIN_PLAYERS
+  const humanCount = players.filter((p) => !p.isBot).length
+  const botCount = players.length - humanCount
   const autoStartAt = room?.autoStartAt ?? null
   const secondsLeft = autoStartAt ? Math.max(0, Math.ceil((autoStartAt - (now + serverOffset)) / 1000)) : null
 
   // Share room state + actions with the bottom-right action bar (Start / Leave Room live there too)
-  const canStartNow = screen === "lobby" && isHost && !loading && players.length >= startMin
+  // Casual rooms auto-fill empty seats with bots at start, so a single human can launch; ranked never has bots.
+  const canStartNow = screen === "lobby" && isHost && !loading && (room?.isRanked ? players.length >= minToStart : humanCount >= 1)
   if (actionsRef) actionsRef.current = { start: () => { void handleStartBattle() }, leave: () => handleLeaveAndExit() }
   const onRoomInfoRef = useRef(onRoomInfo)
   onRoomInfoRef.current = onRoomInfo
@@ -397,9 +440,9 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
       isHost: screen === "lobby" && isHost,
       canStart: canStartNow,
       starting: loading,
-      minPlayers: startMin,
+      minPlayers: room?.isRanked ? minToStart : 1,
     })
-  }, [screen, code, isHost, canStartNow, loading, startMin])
+  }, [screen, code, isHost, canStartNow, loading])
   useEffect(() => () => { onRoomInfoRef.current?.(NO_LOBBY_ROOM) }, [])
 
   // Settings panel is host-only and lobby-only
@@ -429,9 +472,10 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
   }, [room, playerId, code])
 
   // Host of a global room: start / cancel the shared auto-start timer
+  // (bots don't count — public rooms wait for real players; the host can always start manually with bots)
   useEffect(() => {
     if (!room || !room.isPublic || room.status !== "lobby" || !isHost) return
-    const n = players.length
+    const n = humanCount
     const prev = lastPlayerCountRef.current
     lastPlayerCountRef.current = n
     const someoneJoined = prev !== null && n > prev
@@ -442,7 +486,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
       setAutoStartAt(code, null).catch(() => {})
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [room, isHost, players.length])
+  }, [room, isHost, humanCount])
 
   // Tick for the countdown display
   useEffect(() => {
@@ -455,7 +499,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
   useEffect(() => {
     if (!isHost || !room || room.status !== "lobby" || !autoStartAt) return
     if (now + serverOffset < autoStartAt || autoStartingRef.current) return
-    if (players.length < minToStart) return
+    if (humanCount < minToStart) return
     autoStartingRef.current = true
     startBattle(code).catch(() => {
       autoStartingRef.current = false
@@ -629,8 +673,9 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
   }
 
   const handleStartBattle = async () => {
-    // Only the host may start the match (UI is disabled for everybody else, this is the safety net)
-    if (!isHost || players.length < startMin) return
+    // Only the host may start the match (UI is disabled for everybody else, this is the safety net).
+    // Casual rooms auto-fill with bots inside startBattle, so one human is enough; ranked needs real players.
+    if (!isHost || (room?.isRanked ? players.length < minToStart : humanCount < 1)) return
     setLoading(true)
     setError("")
     try {
@@ -931,16 +976,28 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
             <div>
               <div className="flex items-center justify-between mb-2">
                 <div className={`text-xs font-semibold ${darkMode ? "text-white/70" : "text-black/70"}`}>
-                  PLAYERS ({players.length}/{MAX_MP_PLAYERS})
+                  PLAYERS ({players.length}/{MAX_MP_PLAYERS}){botCount > 0 && ` · 🤖 ${botCount}`}
                 </div>
-                {isHost && myUid && friendUids.length > 0 && (
-                  <button
-                    onClick={() => setShowInviteModal(true)}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-gradient-to-r from-emerald-500 to-emerald-400 shadow"
-                  >
-                    <UserPlus className="w-3.5 h-3.5" /> Invite
-                  </button>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {isHost && room?.status === "lobby" && !room.isRanked && players.length < MAX_MP_PLAYERS && (
+                    <button
+                      onClick={async () => { try { await addBot(code, getRoomSettings(room).botDifficulty) } catch { setError("Room full hai") } }}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-gradient-to-r from-sky-500 to-sky-400 shadow"
+                      title="Add AI bot"
+                      aria-label="Add AI bot"
+                    >
+                      <Bot className="w-3.5 h-3.5" /> Bot
+                    </button>
+                  )}
+                  {isHost && myUid && friendUids.length > 0 && (
+                    <button
+                      onClick={() => setShowInviteModal(true)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-gradient-to-r from-emerald-500 to-emerald-400 shadow"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" /> Invite
+                    </button>
+                  )}
+                </div>
               </div>
               {/* 2 per row, same horizontal row style as the in-battle leaderboard: dot + name (+ small tags) */}
               <div className="grid grid-cols-2 gap-1.5 max-h-44 overflow-y-auto">
@@ -967,9 +1024,19 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
                       className={`font-medium truncate flex-1 min-w-0 ${p.uid ? "cursor-pointer" : ""}`}
                       onClick={() => p.uid && openPlayerProfile(p.uid)}
                     >
-                      {p.vip && <VipCrown className="h-3 w-3" />}{p.name}
+                      {p.vip && <VipCrown className="h-3 w-3" />}{playerDisplayName(p)}
                     </span>
-                    {p.id !== playerId && <FriendAction targetUid={p.uid} />}
+                    {p.id !== playerId && !p.isBot && <FriendAction targetUid={p.uid} />}
+                    {isHost && p.isBot && (
+                      <button
+                        onClick={() => { removeBot(code, p.id).catch(() => {}) }}
+                        aria-label={`Remove ${p.name}`}
+                        title="Remove bot"
+                        className={`p-1 -mr-1 shrink-0 rounded-full ${darkMode ? "hover:bg-white/10" : "hover:bg-black/10"}`}
+                      >
+                        <X className="w-3.5 h-3.5 text-red-500" />
+                      </button>
+                    )}
                     {isHost && p.id === playerId && (
                       <button
                         onClick={() => setShowSettings(true)}
@@ -994,6 +1061,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
                   Map: {room?.isRanked ? "🎲 Random (changes every match)" : getBattleMap(settings.map).name}
                   {settings.teleport ? " · Teleport" : ""}
                   {settings.avoidCollision ? " · No collision" : ""}
+                  {!room?.isRanked && settings.fillBots ? " · 🤖 Bots ON" : ""}
                 </>
               )}
               {!isHost ? " · set by host" : ""}

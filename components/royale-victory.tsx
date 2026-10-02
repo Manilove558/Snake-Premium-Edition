@@ -5,7 +5,7 @@ import { Trophy, Crown, Skull, RotateCcw, Home, Loader2 } from "lucide-react"
 import { FriendAction } from "./snake-friends"
 import { VipCrown } from "./vip-crown"
 import { formatClock } from "@/lib/br/zone"
-import type { MpPlayer } from "@/lib/multiplayer"
+import { playerDisplayName, type MpPlayer } from "@/lib/multiplayer"
 
 interface Props {
   players: MpPlayer[]
@@ -50,7 +50,7 @@ export default function RoyaleVictory({ players, winnerId, myId, startAt, endedA
       <div className="m-auto w-full max-w-[330px] px-3 py-2 text-center">
         <Trophy className="mx-auto mb-1 h-9 w-9 text-amber-400" />
         <div className="text-base font-extrabold text-white">
-          {winner ? (winner.player.id === myId ? "🏆 VICTORY — Last Snake Standing!" : `${winner.player.name} wins!`) : "Battle over!"}
+          {winner ? (winner.player.id === myId ? "🏆 VICTORY — Last Snake Standing!" : `${playerDisplayName(winner.player)} wins!`) : "Battle over!"}
         </div>
 
         {me && (
@@ -80,7 +80,7 @@ export default function RoyaleVictory({ players, winnerId, myId, startAt, endedA
               <span className="font-bold">{r.placement === 1 ? <Crown className="h-3 w-3 text-amber-400" /> : r.placement}</span>
               <span className="flex min-w-0 items-center gap-1 text-left">
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: r.player.color }} />
-                <span className="truncate font-medium">{r.player.vip && <VipCrown className="h-3 w-3" />}{r.player.name}</span>
+                <span className="truncate font-medium">{r.player.vip && <VipCrown className="h-3 w-3" />}{playerDisplayName(r.player)}</span>
                 {r.player.id !== winnerId && <Skull className="h-3 w-3 shrink-0 opacity-50" />}
               </span>
               <span className="font-bold tabular-nums">{r.kills}</span>

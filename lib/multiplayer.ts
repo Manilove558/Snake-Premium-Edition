@@ -13,6 +13,7 @@ import {
 import { getFirebaseDb } from "./firebase"
 import { BATTLE_MAPS, getBattleMap, blockedCellKeys } from "./battle-maps"
 import { startBattleRoyale } from "./br/net"
+import { isBotDifficulty, pickBotName, type BotDifficulty } from "./bot-ai"
 
 // ---------------------------------------------------------------------------
 // Multiplayer rooms (Phase 1: lobby — create / join / live player list)
@@ -40,6 +41,10 @@ export interface MpPlayer {
   kills?: number
   /** server time (ms) when this player was eliminated (Battle Royale) */
   diedAt?: number | null
+  /** true for AI bots (simulated by the host, see hooks/use-bot-host.ts) */
+  isBot?: boolean
+  /** bot brain difficulty (only meaningful when isBot is true) */
+  botDifficulty?: BotDifficulty
 }
 
 /** Game mode picked by the host in Room Settings. */
@@ -57,6 +62,10 @@ export interface MpSettings {
   grid: boolean
   /** true: snakes pass through each other, nobody is eliminated by a collision */
   avoidCollision: boolean
+  /** true (default): empty slots are auto-filled with AI bots when the battle starts */
+  fillBots: boolean
+  /** difficulty of auto-filled / manually added bots */
+  botDifficulty: BotDifficulty
 }
 
 export const DEFAULT_MP_SETTINGS: MpSettings = {
@@ -65,6 +74,8 @@ export const DEFAULT_MP_SETTINGS: MpSettings = {
   teleport: false,
   grid: true,
   avoidCollision: false,
+  fillBots: true,
+  botDifficulty: "medium",
 }
 
 /** Room settings with defaults filled in (older rooms have none). */
@@ -77,6 +88,8 @@ export function getRoomSettings(room?: { settings?: Partial<MpSettings> | null; 
     teleport: typeof s.teleport === "boolean" ? s.teleport : DEFAULT_MP_SETTINGS.teleport,
     grid: typeof s.grid === "boolean" ? s.grid : DEFAULT_MP_SETTINGS.grid,
     avoidCollision: typeof s.avoidCollision === "boolean" ? s.avoidCollision : DEFAULT_MP_SETTINGS.avoidCollision,
+    fillBots: typeof s.fillBots === "boolean" ? s.fillBots : DEFAULT_MP_SETTINGS.fillBots,
+    botDifficulty: isBotDifficulty(s.botDifficulty) ? s.botDifficulty : DEFAULT_MP_SETTINGS.botDifficulty,
   }
 }
 
@@ -245,7 +258,7 @@ export async function joinRoom(
   return { playerId }
 }
 
-/** Leave a room. Deletes the room when empty, promotes the oldest player when the host leaves. */
+/** Leave a room. Deletes the room when no human remains, promotes the oldest human when the host leaves. */
 export async function leaveRoom(code: string, playerId: string): Promise<void> {
   const rRef = roomRef(code)
   const snap = await get(rRef)
@@ -255,14 +268,17 @@ export async function leaveRoom(code: string, playerId: string): Promise<void> {
   await remove(playerRef(code, playerId))
 
   const remaining = (Object.values(room.players ?? {}) as MpPlayer[]).filter((p) => p.id !== playerId)
-  if (remaining.length === 0) {
+  const humansLeft = remaining.filter((p) => !p.isBot)
+  if (humansLeft.length === 0) {
+    // Nobody real left (bots alone are not a room) -> delete everything
     await remove(rRef)
     await remove(publicRef(code)).catch(() => {})
     return
   }
   if (room.hostId === playerId) {
-    remaining.sort((a, b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0))
-    await update(rRef, { hostId: remaining[0].id })
+    // A bot can never be host (no client simulates it) -> promote the oldest HUMAN
+    humansLeft.sort((a, b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0))
+    await update(rRef, { hostId: humansLeft[0].id })
   }
 }
 
@@ -356,8 +372,93 @@ export async function updateRoomSettings(code: string, patch: Partial<MpSettings
   if (patch.teleport !== undefined) updates["settings/teleport"] = !!patch.teleport
   if (patch.grid !== undefined) updates["settings/grid"] = !!patch.grid
   if (patch.avoidCollision !== undefined) updates["settings/avoidCollision"] = !!patch.avoidCollision
+  if (patch.fillBots !== undefined) updates["settings/fillBots"] = !!patch.fillBots
+  if (patch.botDifficulty !== undefined && isBotDifficulty(patch.botDifficulty)) updates["settings/botDifficulty"] = patch.botDifficulty
   if (Object.keys(updates).length === 0) return
   await update(roomRef(code), updates)
+}
+
+// ---------------------------------------------------------------------------
+// AI bots — the host simulates them (hooks/use-bot-host.ts) and broadcasts
+// their snakes like any player, so no client needs a special protocol.
+// Bots are stored as players with isBot: true and count toward head counts.
+// ---------------------------------------------------------------------------
+
+export const BOT_ID_PREFIX = "bot_"
+/** at least one seat stays for a human */
+export const MAX_BOTS_PER_ROOM = MAX_MP_PLAYERS - 1
+
+export function generateBotId(): string {
+  return `${BOT_ID_PREFIX}${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+}
+
+/** Host adds one AI bot to the lobby (ranked rooms never get bots). */
+export async function addBot(code: string, difficulty: BotDifficulty = "medium"): Promise<string> {
+  const snap = await get(roomRef(code))
+  if (!snap.exists()) throw new Error("Room not found")
+  const room = snap.val() as Omit<MpRoom, "code">
+  if (room.isRanked) throw new Error("Bots can't join ranked rooms")
+  const players = Object.values(room.players ?? {}) as MpPlayer[]
+  if (players.length >= MAX_MP_PLAYERS) throw new Error("Room is full")
+  const botCount = players.filter((p) => p.isBot).length
+  if (botCount >= MAX_BOTS_PER_ROOM) throw new Error("Bot limit reached")
+
+  const usedColors = new Set(players.map((p) => p.color))
+  const color = MP_PLAYER_COLORS.find((c) => !usedColors.has(c)) ?? MP_PLAYER_COLORS[botCount % MP_PLAYER_COLORS.length]
+  const name = pickBotName(new Set(players.map((p) => p.name)), botCount)
+  const id = generateBotId()
+  const bot: MpPlayer = {
+    id,
+    name,
+    color,
+    joinedAt: Date.now(),
+    alive: true,
+    score: 0,
+    uid: null,
+    isBot: true,
+    botDifficulty: difficulty,
+  }
+  await set(playerRef(code, id), bot)
+  return id
+}
+
+/** Host removes one AI bot (also wipes its live snake, if any). */
+export async function removeBot(code: string, botId: string): Promise<void> {
+  if (!botId.startsWith(BOT_ID_PREFIX)) throw new Error("Not a bot")
+  await remove(playerRef(code, botId)).catch(() => {})
+  await remove(ref(getFirebaseDb(), `rooms/${code}/snakes/${botId}`)).catch(() => {})
+}
+
+/** UI label for a player — AI bots get a [BOT] marker in lobbies, leaderboards, kill feeds and winner banners. */
+export function playerDisplayName(
+  p: Pick<MpPlayer, "name" | "isBot"> | null | undefined,
+  fallback = "Player",
+): string {
+  const name = p?.name?.trim() ? p.name : fallback
+  return p?.isBot ? `${name} [BOT]` : name
+}
+
+/**
+ * Fill every empty slot with an AI bot. Called by the host right before the
+ * battle starts (both classic and Battle Royale). Returns how many bots were added.
+ * No-op when the room is ranked, the setting is off, or no human is in the room.
+ */
+export async function autoFillBots(code: string, room: Omit<MpRoom, "code">): Promise<number> {
+  const settings = getRoomSettings(room)
+  if (room.isRanked || !settings.fillBots) return 0
+  const before = Object.values(room.players ?? {}) as MpPlayer[]
+  const realCount = before.filter((p) => !p.isBot).length
+  if (realCount === 0) return 0 // never start a bots-only room
+  let added = 0
+  for (let i = before.length; i < MAX_MP_PLAYERS; i++) {
+    try {
+      await addBot(code, settings.botDifficulty)
+      added++
+    } catch {
+      break
+    }
+  }
+  return added
 }
 
 /** Host starts the battle: reset players, set shared countdown, clear snakes. */
@@ -366,9 +467,12 @@ export async function startBattle(code: string): Promise<void> {
   const snap = await get(rRef)
   if (!snap.exists()) throw new Error("Room not found")
   const room = snap.val() as Omit<MpRoom, "code">
-  const players = Object.values(room.players ?? {}) as MpPlayer[]
+  // Fill empty slots with AI bots BEFORE the head-count check (ranked rooms never get bots)
+  await autoFillBots(code, room)
+  const fresh = (await get(rRef)).val() as Omit<MpRoom, "code">
+  const players = Object.values(fresh.players ?? {}) as MpPlayer[]
   // Battle Royale has its own start (zone clock, many foods, 4-8 players)
-  if (!room.isRanked && getRoomSettings(room).mode === "royale") return startBattleRoyale(code, room)
+  if (!room.isRanked && getRoomSettings(room).mode === "royale") return startBattleRoyale(code, fresh)
   if (players.length < BATTLE_MIN_PLAYERS) throw new Error(`Need at least ${BATTLE_MIN_PLAYERS} players to start`)
 
   // Ranked rooms: the arena is drawn at random for EVERY match (nobody picks the map)
