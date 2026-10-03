@@ -28,6 +28,8 @@ import {
 import { getBattleMap } from "@/lib/battle-maps"
 import { useBotHost } from "@/hooks/use-bot-host"
 import { BotTag } from "./bot-tag"
+import { SnakeInterpolator } from "@/lib/br/interpolation"
+import { sampleTickMs } from "@/lib/smooth-move"
 import { claimRankRewards } from "@/lib/store"
 import VoiceChat from "./voice-chat"
 import { FriendAction } from "./snake-friends"
@@ -63,6 +65,8 @@ interface Props {
   /** left column between the Future-buttons strip and the board (player leaderboard) */
   leftEl: HTMLElement | null
   bestScore: number
+  /** "Smooth movement" setting (Battle Royale style gliding). Default on. */
+  smoothMove?: boolean
   onExit: () => void
   onBackToLobby: () => void
 }
@@ -99,7 +103,7 @@ interface RankedResultRow {
 
 const matchKeyOf = (r: MpRoom) => `${r.code}:${r.game?.countdownEndsAt ?? 0}`
 
-export default function MultiplayerBattle({ code, playerId, darkMode, controlMode, soundEnabled, volume, centerEl, sideEl, leftEl, bestScore, onExit, onBackToLobby }: Props) {
+export default function MultiplayerBattle({ code, playerId, darkMode, controlMode, soundEnabled, volume, centerEl, sideEl, leftEl, bestScore, smoothMove = true, onExit, onBackToLobby }: Props) {
   const [room, setRoom] = useState<MpRoom | null>(null)
   const [snakes, setSnakes] = useState<Record<string, MpSnakeState>>({})
   const [food, setFood] = useState<Seg | null>(null)
@@ -134,6 +138,9 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   const phaseRef = useRef("lobby")
   const roomRef = useRef<MpRoom | null>(null)
   const snakesStateRef = useRef<Record<string, MpSnakeState>>({})
+  // smooth movement: one interpolator for my snake + one per remote snake (fed by the same data the game already syncs)
+  const myInterp = useRef(new SnakeInterpolator())
+  const remoteInterps = useRef<Map<string, { interp: SnakeInterpolator; ts: number }>>(new Map())
   const foodStateRef = useRef<Seg | null>(null)
   const spawnedRef = useRef(false)
   const prevStatusRef = useRef<string | null>(null)
@@ -201,6 +208,20 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
     const unsubSnakes = onValue(snakesRef(code), (snap) => {
       const v = (snap.val() ?? {}) as Record<string, MpSnakeState>
       snakesStateRef.current = v
+      const nowP = performance.now()
+      for (const [pid, s] of Object.entries(v)) {
+        if (pid === playerId) continue
+        let r = remoteInterps.current.get(pid)
+        if (!r) {
+          r = { interp: new SnakeInterpolator(), ts: -1 }
+          remoteInterps.current.set(pid, r)
+        }
+        if (r.ts !== s.ts) {
+          r.ts = s.ts
+          r.interp.push(s.seg ?? [], nowP)
+        }
+      }
+      for (const pid of [...remoteInterps.current.keys()]) if (!(pid in v)) remoteInterps.current.delete(pid)
       setSnakes(v)
     })
     const unsubFood = onValue(foodRef(code), (snap) => {
@@ -245,6 +266,8 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
     for (let i = 0; i < 3; i++) snake.push({ x: s.x - s.dx * i, y: s.y - s.dy * i })
     snakeRef.current = snake
     spawnedRef.current = true
+    myInterp.current.clear()
+    myInterp.current.push([...snake], performance.now())
     set(mySnakeRef(code, playerId), { seg: snake, dx: s.dx, dy: s.dy, ts: Date.now() }).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room])
@@ -271,6 +294,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   const die = (cause: "kill" | "wall" | "self", killerId?: string, killerName?: string) => {
     if (!aliveRef.current) return
     aliveRef.current = false
+    myInterp.current.clear()
     const db = getFirebaseDb()
     const me = roomRef.current?.players?.[playerId]
     update(ref(db, `rooms/${code}/players/${playerId}`), { alive: false }).catch(() => {})
@@ -386,6 +410,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
     snakeRef.current.unshift(newHead)
     if (growthRef.current > 0) growthRef.current -= 1
     else snakeRef.current.pop()
+    myInterp.current.push([...snakeRef.current], performance.now())
 
     set(mySnakeRef(code, playerId), {
       seg: snakeRef.current,
@@ -680,12 +705,19 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   }
 
   // --- drawing -------------------------------------------------------------------
-  useEffect(() => {
+  // drawArena(smooth): ONE draw routine. Smooth movement runs it every animation frame (snakes glide between
+  // cells); with smooth off it runs only when the game data changes (snakes jump a whole cell per tick).
+  const smoothRef = useRef(smoothMove)
+  smoothRef.current = smoothMove
+  const drawRef = useRef<() => void>(() => {})
+  drawRef.current = () => {
+    const smooth = smoothRef.current
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext("2d")
     if (!ctx) return
     const now = Date.now()
+    const nowP = performance.now()
 
     // Same background + grid look as the classic canvas
     const bg = ctx.createLinearGradient(0, 0, canvas.width, canvas.height)
@@ -779,13 +811,32 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
     for (const [pid, s] of entries) {
       if (pid === playerId) continue
       const color = room?.players?.[pid]?.color ?? "#888888"
-      drawSnake(s.seg ?? [], color, false)
+      const glide = smooth ? remoteInterps.current.get(pid)?.interp.sample(nowP, sampleTickMs(true, BATTLE_TICK_MS)) : null
+      drawSnake(glide && glide.length > 0 ? glide : (s.seg ?? []), color, false)
     }
     if (aliveRef.current && snakeRef.current.length > 0) {
-      drawSnake(snakeRef.current, myPlayer?.color ?? "#3af08d", true)
+      const glide = smooth ? myInterp.current.sample(nowP, sampleTickMs(true, BATTLE_TICK_MS)) : null
+      drawSnake(glide && glide.length > 0 ? glide : snakeRef.current, myPlayer?.color ?? "#3af08d", true)
     }
+  }
+
+  // smooth OFF: redraw when the data changes (same as before)
+  useEffect(() => {
+    if (!smoothMove) drawRef.current()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snakes, food, frame, darkMode, room, centerEl])
+  }, [snakes, food, frame, darkMode, room, centerEl, smoothMove])
+
+  // smooth ON: redraw every animation frame
+  useEffect(() => {
+    if (!smoothMove) return
+    let raf = 0
+    const loop = () => {
+      drawRef.current()
+      raf = requestAnimationFrame(loop)
+    }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [smoothMove, centerEl])
 
   // --- derived UI ------------------------------------------------------------------
   const countdownEndsAt = room?.game?.countdownEndsAt ?? 0

@@ -19,6 +19,8 @@ import { useStore, equippedItem, loadCatalog, earnCoins, earnGems, setBest } fro
 import { shapePath } from "@/lib/shapes"
 import BattleRouter from "./battle-router" // picks classic MultiplayerBattle or RoyaleBattle from the room mode
 import { RankPopup, MapPopup, SettingsPopup } from "./home-popups"
+import SmoothSnakeLayer from "./smooth-snake-layer"
+import { loadSmoothMove, saveSmoothMove } from "@/lib/smooth-move"
 import { RotateHint } from "./rotate-hint"
 import { PanelHostContext, type ViewId } from "./panel-host"
 
@@ -614,6 +616,10 @@ export default function SnakeGame() {
   useEffect(() => { if (gameOver && scoreRef.current >= 20) earnGems(Math.floor(scoreRef.current / 20)) }, [gameOver])
   // Which on-screen controls are shown: D-pad buttons or swipe gestures
   const [controlMode, setControlMode] = useState<"buttons" | "swipe">("buttons")
+  // "Smooth movement" (Battle Royale style gliding) — saved on this device, on by default
+  const [smoothMove, setSmoothMove] = useState(true)
+  useEffect(() => setSmoothMove(loadSmoothMove()), [])
+  useEffect(() => saveSmoothMove(smoothMove), [smoothMove])
   // Random snake start position (head + direction), regenerated on every mode change
   const [snakeStart, setSnakeStart] = useState(() => getRandomSnakeStart([]))
   // Whether the canvas shows the mode preview (start screen, or game-over after a swipe)
@@ -1691,7 +1697,8 @@ export default function SnakeGame() {
         ctx.restore()
         t.life -= 1
       })
-      snake.forEach((segment, index) => {
+      // (smooth movement: the SmoothSnakeLayer on top draws the snake while a game is running)
+      if (!(smoothMove && gameStarted && !gameOver)) snake.forEach((segment, index) => {
         const isHead = index === 0
         const x = segment.x * CELL_SIZE
         const y = segment.y * CELL_SIZE
@@ -1925,6 +1932,7 @@ export default function SnakeGame() {
     graceActive,
     gridVisible,
     isPaused,
+    smoothMove,
   ])
 
   // Update the game mode descriptions to reflect teleporting
@@ -2063,7 +2071,7 @@ export default function SnakeGame() {
         <div ref={modeSwipeAreaRef} className="flex-1 min-h-0 min-w-0 flex items-center justify-center" style={{ containerType: "size" }}>
           <div
             ref={canvasWrapperRef}
-            className={`rounded-2xl overflow-hidden premium-glow border border-black/10 dark:border-white/10 ${inBattle ? "hidden" : ""}`}
+            className={`relative rounded-2xl overflow-hidden premium-glow border border-black/10 dark:border-white/10 ${inBattle ? "hidden" : ""}`}
             style={{ width: "min(100cqw, 100cqh)", aspectRatio: "1 / 1" }}
           >
             <canvas
@@ -2072,6 +2080,17 @@ export default function SnakeGame() {
               height={GRID_HEIGHT * CELL_SIZE}
               className="block w-full h-full touch-none"
               style={{ imageRendering: "auto" }}
+            />
+            <SmoothSnakeLayer
+              snake={snake}
+              active={smoothMove && gameStarted && !gameOver}
+              tickMs={speed}
+              cell={CELL_SIZE}
+              cols={GRID_WIDTH}
+              rows={GRID_HEIGHT}
+              skin={skinItem}
+              graceActive={graceActive}
+              darkMode={darkMode}
             />
           </div>
           {/* Multiplayer battle board portals in here (same size / frame as the classic board) */}
@@ -2296,6 +2315,8 @@ export default function SnakeGame() {
           hapticEnabled={hapticEnabled}
           setHapticEnabled={setHapticEnabled}
           hapticSupported={!mounted || isVibrationSupported()}
+          smoothMove={smoothMove}
+          setSmoothMove={(v) => { triggerHaptic(15); setSmoothMove(v) }}
           onClose={() => setActiveView("GAME")}
         />
       )}
@@ -2331,6 +2352,7 @@ export default function SnakeGame() {
           controlMode={controlMode}
           soundEnabled={soundEnabled}
           volume={volume}
+          smoothMove={smoothMove}
           centerEl={mpCenterEl}
           sideEl={mpSideEl}
           leftEl={mpLeftEl}

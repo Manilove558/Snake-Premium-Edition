@@ -136,9 +136,11 @@ type SettingsProps = {
   darkMode: boolean; setDarkMode: (v: boolean) => void
   controlMode: "buttons" | "swipe"; setControlMode: (m: "buttons" | "swipe") => void
   hapticEnabled: boolean; setHapticEnabled: (v: boolean) => void; hapticSupported: boolean
+  /** Battle-Royale-style gliding movement (single-player, classic battle and Battle Royale) */
+  smoothMove: boolean; setSmoothMove: (v: boolean) => void
   onClose: () => void
 }
-export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume, darkMode, setDarkMode, controlMode, setControlMode, hapticEnabled, setHapticEnabled, hapticSupported, onClose }: SettingsProps) {
+export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume, darkMode, setDarkMode, controlMode, setControlMode, hapticEnabled, setHapticEnabled, hapticSupported, smoothMove, setSmoothMove, onClose }: SettingsProps) {
   const label = "text-[10px] tracking-[.2em] font-bold opacity-50 px-1"
   const seg = (v: "buttons" | "swipe", text: string, icon: ReactNode) => (
     <button key={v} onClick={() => setControlMode(v)} aria-pressed={controlMode === v}
@@ -178,6 +180,9 @@ export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume
         {seg("buttons", "Buttons", <Gamepad2 className="h-4 w-4" />)}
         {seg("swipe", "Swipe", <Move className="h-4 w-4" />)}
       </div>
+      {/* Movement style */}
+      <div className={label}>MOVEMENT</div>
+      <Row title="Smooth movement" hint={smoothMove ? "Battle Royale style: the snake glides" : "Off: classic cell-by-cell steps"} on={smoothMove} onToggle={() => setSmoothMove(!smoothMove)} icon={<Move className="h-5 w-5" />} />
     </PopupShell>
   )
 }

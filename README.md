@@ -1,13 +1,12 @@
-# AI Bots update
+# Smooth movement toggle (Battle Royale style)
 
-Copy the folders in this directory over your project (same paths). 4 new files, 5 modified files:
+Settings -> MOVEMENT -> "Smooth movement" (ON by default, saved on the device).
+ON  = snake glides between cells at 60fps (Battle Royale style)
+OFF = classic cell-by-cell steps
+Works in: single-player, classic multiplayer battle, Battle Royale. Game logic/speed/collisions are unchanged.
 
-NEW        lib/bot-ai.ts              pure bot brain (BFS food seeking, raycast + flood-fill avoidance, zone logic, Easy/Medium/Hard)
-NEW        lib/bot-host.ts            host-side runner: spawns, ticks, collisions, deaths, food, heartbeat (classic + royale)
-NEW        hooks/use-bot-host.ts      runs the runner on the host; host takeover if the host drops
-NEW        components/bot-tag.tsx     [BOT] badge
-MODIFIED   lib/multiplayer.ts         bot fields/settings, auto-fill at start, cleanup, leaveRoom fix
-MODIFIED   components/multiplayer-battle.tsx, royale-battle.tsx, royale-victory.tsx, multiplayer-lobby.tsx
+NEW       lib/smooth-move.ts, components/smooth-snake-layer.tsx
+MODIFIED  components/snake-game.tsx, home-popups.tsx, multiplayer-battle.tsx, royale-battle.tsx
 
-No Firebase rules change needed (rooms/$code is already open for read/write).
-Tuning knobs: BOT_FILL_TARGET (lib/multiplayer.ts), BOT_DIFFICULTY (lib/bot-ai.ts).
+NOTE: multiplayer-battle.tsx and royale-battle.tsx here ALSO contain the AI-bots changes from the previous update
+(bots-update.zip). Apply bots-update first, then this folder over it.

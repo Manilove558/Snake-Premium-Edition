@@ -49,6 +49,7 @@ import RoyaleHud from "./royale-hud"
 import RoyaleVictory from "./royale-victory"
 import { useBotHost } from "@/hooks/use-bot-host"
 import { BotTag } from "./bot-tag"
+import { sampleTickMs } from "@/lib/smooth-move"
 
 const CANVAS_PX = BR_VIEW_CELLS * BR_CELL // fixed 360 x 360 — only the camera window moves
 
@@ -64,6 +65,8 @@ export interface RoyaleBattleProps {
   sideEl: HTMLElement | null
   leftEl: HTMLElement | null
   bestScore: number
+  /** "Smooth movement" setting: on = snakes glide (default), off = they jump a whole cell per tick */
+  smoothMove?: boolean
   onExit: () => void
   onBackToLobby: () => void
 }
@@ -81,7 +84,7 @@ interface RemoteSnake {
   recvAt: number
 }
 
-export default function RoyaleBattle({ code, playerId, darkMode, controlMode, soundEnabled, volume, centerEl, sideEl, leftEl, onExit, onBackToLobby }: RoyaleBattleProps) {
+export default function RoyaleBattle({ code, playerId, darkMode, controlMode, soundEnabled, volume, centerEl, sideEl, leftEl, smoothMove = true, onExit, onBackToLobby }: RoyaleBattleProps) {
   const [room, setRoom] = useState<MpRoom | null>(null)
   const [kills, setKills] = useState<KillItem[]>([])
   const [nowTs, setNowTs] = useState(Date.now())
@@ -141,6 +144,8 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
   gridRef.current = settings.grid
   const darkRef = useRef(darkMode)
   darkRef.current = darkMode
+  const smoothRef = useRef(smoothMove)
+  smoothRef.current = smoothMove
   const myColorRef = useRef("#3af08d")
   myColorRef.current = myPlayer?.color ?? "#3af08d"
 
@@ -484,7 +489,7 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
       const snakes: DrawSnake[] = []
       const dots: MinimapDot[] = []
       if (aliveRef.current && snakeRef.current.length > 0) {
-        const seg = myInterp.current.sample(now)
+        const seg = myInterp.current.sample(now, sampleTickMs(smoothRef.current, BR_TICK_MS))
         if (seg.length > 0) {
           snakes.push({ id: playerId, color: myColorRef.current, seg, mine: true })
           dots.push({ color: myColorRef.current, x: seg[0].x, y: seg[0].y, mine: true })
@@ -493,7 +498,7 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
       for (const [pid, rs] of remotesRef.current) {
         const p = r?.players?.[pid]
         if (!p || !p.alive || now - rs.recvAt > BATTLE_SNAKE_STALE_MS) continue
-        const seg = rs.interp.sample(now)
+        const seg = rs.interp.sample(now, sampleTickMs(smoothRef.current, BR_TICK_MS))
         if (seg.length === 0) continue
         snakes.push({ id: pid, color: p.color, seg, mine: false })
         dots.push({ color: p.color, x: seg[0].x, y: seg[0].y, mine: false })
