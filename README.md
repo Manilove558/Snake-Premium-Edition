@@ -1,14 +1,14 @@
-# Smooth movement toggle (Battle Royale style)
+# Click sound + vibration on every button, Settings icons
 
-Settings -> MOVEMENT -> "Smooth movement" (ON by default, saved on the device).
-ON  = snake glides between cells at 60fps (Battle Royale style)
-OFF = classic cell-by-cell steps
-Works in: single-player, classic multiplayer battle, Battle Royale. Game logic/speed/collisions are unchanged.
-Smooth ON also draws EYES on the head, identical to the Battle Royale snake (plain white dots), in single-player + classic battle.
-Teleport / portal / reverse / new level snap the whole snake instead of gliding across the board.
+Settings -> Sound row and Vibration row now have icons (Controls, Movement, Theme, Click sound and the volume slider already had one).
+Settings -> "VIBRATION & SOUND" -> "Click sound" switch (ON by default, saved on the device).
+Every button / link / switch / tab / checkbox press now gives:
+  * a click sound  (needs the "Click sound" switch AND the game "Sound" switch; follows the volume slider)
+  * a short 15 ms vibration (follows the "Vibration" switch; devices without vibration support do nothing)
+Opt a single button out:  data-no-click-sound  (no sound)   /   data-no-haptic  (no vibration)
 
-NEW       lib/smooth-move.ts, components/smooth-snake-layer.tsx
-MODIFIED  components/snake-game.tsx, home-popups.tsx, multiplayer-battle.tsx, royale-battle.tsx
+NEW       public/sounds/click.mp3        your Click_button_effect (+8 dB)
+NEW       hooks/use-click-sound.ts, hooks/use-click-haptic.ts, lib/pressable.ts, lib/click-sound.ts
+MODIFIED  components/home-popups.tsx, components/snake-game.tsx
 
-NOTE: multiplayer-battle.tsx and royale-battle.tsx here ALSO contain the AI-bots changes from the previous update
-(bots-update.zip). Apply bots-update first, then this folder over it.
+NOTE: those two components ALSO contain the earlier smooth-movement update.

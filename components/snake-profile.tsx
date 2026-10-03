@@ -85,8 +85,9 @@ export function SnakeProfile() {
 
   return (
     <>
+      {/* Same look as the avatar inside the Profile popup: thin green ring + picture. 44px picture + 2px ring = fills the whole 48px circle */}
       <button aria-label="Profile" onClick={() => setOpen(true)} className="d-pad-btn inline-flex items-center justify-center h-12 w-12 rounded-full hover:bg-accent hover:text-accent-foreground">
-        {user?.photoURL || resolveAvatar(st.equipped.avatar, isVip(st)) ? <PlayerAvatar photo={user?.photoURL} avatarId={st.equipped.avatar} vip={isVip(st)} size={28} /> : <UserIcon className="h-5 w-5" />}
+        {user?.photoURL || resolveAvatar(st.equipped.avatar, isVip(st)) ? <PlayerAvatar photo={user?.photoURL} avatarId={st.equipped.avatar} vip={isVip(st)} size={44} /> : <UserIcon className="h-5 w-5" />}
       </button>
       {open && createPortal(
         <div className="absolute inset-0 z-[10] flex items-center justify-center overflow-y-auto backdrop-blur-md bg-black/30 dark:bg-black/55" onClick={close}>

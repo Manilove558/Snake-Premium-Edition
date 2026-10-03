@@ -5,6 +5,9 @@ import { createPortal } from "react-dom"
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Pause, Play, X, Settings, Trophy, Map as MapIcon, Shuffle, Grid3x3, Users, LogOut } from "lucide-react"
 // Import the sound manager at the top of the file
 import { useSoundManager } from "./sound-manager"
+import { useClickSound } from "@/hooks/use-click-sound"
+import { useClickHaptic } from "@/hooks/use-click-haptic"
+import { loadClickSound, saveClickSound } from "@/lib/click-sound"
 import MultiplayerLobby, { NO_LOBBY_ROOM, type LobbyActions, type LobbyRoomInfo } from "./multiplayer-lobby"
 import { SnakeStore } from "./snake-store"
 import { SnakeVault } from "./snake-vault"
@@ -630,6 +633,13 @@ export default function SnakeGame() {
     enabled: soundEnabled,
     volume,
   })
+  // Click sound on every button / tap in the whole app. Own switch in Settings; also needs the game Sound on, and follows the volume
+  const [clickSound, setClickSound] = useState(true)
+  useEffect(() => setClickSound(loadClickSound()), [])
+  useEffect(() => saveClickSound(clickSound), [clickSound])
+  useClickSound({ enabled: soundEnabled && clickSound, volume })
+  // Short vibration on every button press (follows the Settings "Vibration" switch)
+  useClickHaptic({ enabled: hapticEnabled })
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const gameLoopRef = useRef<NodeJS.Timeout | null>(null)
@@ -2317,6 +2327,12 @@ export default function SnakeGame() {
           hapticSupported={!mounted || isVibrationSupported()}
           smoothMove={smoothMove}
           setSmoothMove={(v) => { triggerHaptic(15); setSmoothMove(v) }}
+          clickSound={clickSound}
+          setClickSound={(v) => {
+            setClickSound(v)
+            // turning it ON: play one click as a preview (the global listener is still off at this exact tap)
+            if (v && soundEnabled && volume > 0) { const a = new Audio("/sounds/click.mp3"); a.volume = volume; a.play().catch(() => {}) }
+          }}
           onClose={() => setActiveView("GAME")}
         />
       )}

@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
-import { X, Volume2, VolumeX, Trophy, Globe, Users, Moon, Sun, Gamepad2, Move } from "lucide-react"
+import { X, Volume2, VolumeX, Trophy, Globe, Users, Moon, Sun, Gamepad2, Move, Vibrate, VibrateOff } from "lucide-react"
 import { fetchLeaderboard, type LeaderboardRow } from "@/lib/ranked-db"
 import { getTier } from "@/lib/ranked"
 import { openPlayerProfile, useFriends } from "@/lib/friends"
@@ -138,9 +138,11 @@ type SettingsProps = {
   hapticEnabled: boolean; setHapticEnabled: (v: boolean) => void; hapticSupported: boolean
   /** Battle-Royale-style gliding movement (single-player, classic battle and Battle Royale) */
   smoothMove: boolean; setSmoothMove: (v: boolean) => void
+  /** sound on every button press (separate from the game-sounds toggle) */
+  clickSound: boolean; setClickSound: (v: boolean) => void
   onClose: () => void
 }
-export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume, darkMode, setDarkMode, controlMode, setControlMode, hapticEnabled, setHapticEnabled, hapticSupported, smoothMove, setSmoothMove, onClose }: SettingsProps) {
+export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume, darkMode, setDarkMode, controlMode, setControlMode, hapticEnabled, setHapticEnabled, hapticSupported, smoothMove, setSmoothMove, clickSound, setClickSound, onClose }: SettingsProps) {
   const label = "text-[10px] tracking-[.2em] font-bold opacity-50 px-1"
   const seg = (v: "buttons" | "swipe", text: string, icon: ReactNode) => (
     <button key={v} onClick={() => setControlMode(v)} aria-pressed={controlMode === v}
@@ -159,19 +161,20 @@ export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume
             <input type="range" min={0} max={100} value={Math.round(volume * 100)} onChange={(e) => setVolume(Number(e.target.value) / 100)} aria-label="Game volume" className="flex-1 h-12 accent-emerald-500 cursor-pointer" />
             <span className="w-9 text-right text-xs tabular-nums opacity-60">{Math.round(volume * 100)}%</span>
           </div>
-          <Row title="Sound" hint="Game sounds on / off" on={soundEnabled} onToggle={() => setSoundEnabled(!soundEnabled)} />
+          <Row title="Sound" hint="Game sounds on / off" on={soundEnabled} onToggle={() => setSoundEnabled(!soundEnabled)} icon={soundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />} />
         </div>
         {/* Theme + vibration */}
         <div className="flex flex-col gap-2">
           <div className={label}>THEME</div>
           <Row title={darkMode ? "Dark theme" : "Light theme"} hint="Switch light / dark" on={darkMode} onToggle={() => setDarkMode(!darkMode)} icon={darkMode ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />} />
-          <div className={label}>VIBRATION</div>
-          <Row title="Vibration" hint={hapticSupported ? "Haptic feedback on touch" : "Not supported on this device"} on={hapticEnabled && hapticSupported} disabled={!hapticSupported}
+          <div className={label}>VIBRATION &amp; SOUND</div>
+          <Row title="Vibration" hint={hapticSupported ? "Vibrates on every button press" : "Not supported on this device"} on={hapticEnabled && hapticSupported} disabled={!hapticSupported} icon={hapticEnabled && hapticSupported ? <Vibrate className="h-5 w-5" /> : <VibrateOff className="h-5 w-5" />}
             onToggle={() => {
               const v = !hapticEnabled
               setHapticEnabled(v)
               if (v && hapticSupported) { try { navigator.vibrate(15) } catch {} }
             }} />
+          <Row title="Click sound" hint="Sound on every button press" on={clickSound} onToggle={() => setClickSound(!clickSound)} icon={clickSound ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />} />
         </div>
       </div>
       {/* Controls */}
