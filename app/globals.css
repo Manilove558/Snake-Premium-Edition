@@ -215,3 +215,58 @@ body {
 .panel-layer { animation: panel-in 0.18s ease-out; }
 /* The frame is the containing block for nested sheets/toasts (position: fixed), so they never cover the side panels */
 .panel-layer { contain: layout paint; }
+
+
+/* ---- Settings: "Click sound" row (tap = on/off, swipe = volume) ---- */
+.cs-row {
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .3s cubic-bezier(.34, 1.56, .64, 1), box-shadow .3s ease, border-color .3s ease;
+}
+.cs-row[data-drag="true"] {
+  transform: scale(1.025);
+  border-color: rgba(16, 185, 129, .65);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, .45), 0 10px 26px -8px rgba(16, 185, 129, .55);
+}
+.cs-scale {
+  opacity: .22;
+  background-image: repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 10%);
+  -webkit-mask-image: linear-gradient(to top, #000 55%, transparent);
+  mask-image: linear-gradient(to top, #000 55%, transparent);
+}
+.cs-fill {
+  background: linear-gradient(90deg, rgba(16, 185, 129, .10), rgba(16, 185, 129, .38) 70%, rgba(52, 211, 153, .5));
+  transition: width .35s cubic-bezier(.22, 1, .36, 1), opacity .3s ease, filter .3s ease;
+}
+.cs-row[data-drag="true"] .cs-fill { transition: opacity .3s ease, filter .3s ease; } /* follows the finger 1:1 */
+.cs-fill[data-off="true"] { filter: grayscale(1); opacity: .45; }
+.cs-edge {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 3px;
+  background: rgb(52, 211, 153);
+  box-shadow: 0 0 12px 2px rgba(52, 211, 153, .75);
+  opacity: 0; transition: opacity .25s ease;
+}
+.cs-row[data-drag="true"] .cs-edge { opacity: 1; }
+.cs-badge { background: rgba(0, 0, 0, .07); opacity: .75; transition: transform .25s cubic-bezier(.34, 1.56, .64, 1), background-color .25s ease, color .25s ease, opacity .25s ease; }
+.dark .cs-badge { background: rgba(255, 255, 255, .12); }
+.cs-badge-on { transform: scale(1.2); background: rgb(16, 185, 129) !important; color: #fff; opacity: 1; }
+.cs-knob { transition: left .35s cubic-bezier(.34, 1.56, .64, 1); }
+.cs-ripple {
+  position: absolute; width: 280px; height: 280px; border-radius: 9999px; pointer-events: none;
+  background: radial-gradient(circle, rgba(16, 185, 129, .45), rgba(16, 185, 129, 0) 65%);
+  transform: translate(-50%, -50%) scale(0);
+  animation: cs-ripple .6s ease-out forwards;
+}
+@keyframes cs-ripple { from { transform: translate(-50%, -50%) scale(0); opacity: 1; } to { transform: translate(-50%, -50%) scale(1); opacity: 0; } }
+.cs-pop { animation: cs-pop .45s cubic-bezier(.34, 1.56, .64, 1); }
+@keyframes cs-pop { 0% { transform: scale(1); } 35% { transform: scale(1.28); } 100% { transform: scale(1); } }
+.cs-nudge-l { animation: cs-nudge-l 1.6s ease-in-out infinite; }
+.cs-nudge-r { animation: cs-nudge-r 1.6s ease-in-out infinite; }
+@keyframes cs-nudge-l { 0%, 100% { transform: translateX(0); opacity: .5; } 50% { transform: translateX(-3px); opacity: 1; } }
+@keyframes cs-nudge-r { 0%, 100% { transform: translateX(0); opacity: .5; } 50% { transform: translateX(3px); opacity: 1; } }
+.cs-fade { animation: cs-fade .25s ease both; }
+@keyframes cs-fade { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .cs-row, .cs-fill, .cs-edge, .cs-badge, .cs-knob { transition: none !important; }
+  .cs-ripple, .cs-pop, .cs-nudge-l, .cs-nudge-r, .cs-fade { animation: none !important; }
+  .cs-row[data-drag="true"] { transform: none; }
+}

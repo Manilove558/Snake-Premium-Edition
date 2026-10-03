@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
-import { X, Volume2, VolumeX, Trophy, Globe, Users, Moon, Sun, Gamepad2, Move, Vibrate, VibrateOff } from "lucide-react"
+import { X, Volume2, VolumeX, Trophy, Globe, Users, Moon, Sun, Gamepad2, Move, Vibrate, VibrateOff, ChevronLeft, ChevronRight } from "lucide-react"
 import { fetchLeaderboard, type LeaderboardRow } from "@/lib/ranked-db"
 import { getTier } from "@/lib/ranked"
 import { openPlayerProfile, useFriends } from "@/lib/friends"
@@ -207,16 +207,49 @@ function Row({ title, hint, on, onToggle, disabled, icon }: { title: string; hin
   )
 }
 
+/** Speaker icon whose sound waves grow / shrink with the level (1-3 arcs), swap to an X when muted. */
+function SpeakerIcon({ level, muted }: { level: number; muted: boolean }) {
+  const wave = (d: string, active: boolean, delay: number) => (
+    <path
+      d={d}
+      style={{
+        opacity: active ? 1 : 0,
+        transform: active ? "scale(1)" : "scale(.55)",
+        transformOrigin: "10px 12px",
+        transition: `opacity .2s ease ${delay}ms, transform .35s cubic-bezier(.34,1.56,.64,1) ${delay}ms`,
+      }}
+    />
+  )
+  return (
+    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M11 5 6 9H3v6h3l5 4V5z" fill="currentColor" fillOpacity=".25" />
+      {wave("M15.5 9a4 4 0 0 1 0 6", !muted && level > 0, 0)}
+      {wave("M18 6.8a7.5 7.5 0 0 1 0 10.4", !muted && level > 0.33, 45)}
+      {wave("M20.6 4.4a11 11 0 0 1 0 15.2", !muted && level > 0.66, 90)}
+      <g style={{ opacity: muted ? 1 : 0, transform: muted ? "scale(1)" : "scale(.4)", transformOrigin: "18px 12px", transition: "opacity .2s ease, transform .35s cubic-bezier(.34,1.56,.64,1)" }}>
+        <path d="M16 9.5l5 5" /><path d="M21 9.5l-5 5" />
+      </g>
+    </svg>
+  )
+}
+
 /** "Click sound" row with its own volume bar built into the button:
  *  tap = on / off,  press + swipe left / right = lower / raise the click volume (full row width = 0..100%).
- *  Keyboard: Enter / Space toggles, Left / Right arrows change the volume by 5%. */
+ *  Keyboard: Enter / Space toggles, Left / Right arrows change the volume by 5%.
+ *  Motion: tap ripple, row lifts + glows while dragging, fill follows the finger 1:1 with a glowing edge, the speaker's
+ *  waves grow with the level, the % badge pops, the switch knob springs. All of it is off for prefers-reduced-motion. */
 function ClickSoundRow({ on, onToggle, volume, setVolume }: { on: boolean; onToggle: () => void; volume: number; setVolume: (v: number) => void }) {
   const drag = useRef<{ x: number; vol: number; w: number; moved: boolean } | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const [ripple, setRipple] = useState<{ id: number; x: number; y: number } | null>(null)
+  const [pulse, setPulse] = useState(0)
   const pct = Math.round(volume * 100)
+  const clamp = (v: number) => Math.min(1, Math.max(0, Math.round(v * 100) / 100))
   const preview = (v: number) => {
     if (v <= 0) return
-    try { const a = new Audio("/sounds/click.mp3"); a.volume = Math.min(1, Math.max(0, v)); a.play().catch(() => {}) } catch {}
+    try { const a = new Audio("/sounds/click.mp3"); a.volume = clamp(v); a.play().catch(() => {}) } catch {}
   }
+  const end = () => { drag.current = null; setDragging(false) }
   return (
     <div
       role="switch"
@@ -224,49 +257,77 @@ function ClickSoundRow({ on, onToggle, volume, setVolume }: { on: boolean; onTog
       aria-label={`Click sound, volume ${pct}%`}
       tabIndex={0}
       data-no-click-sound
+      data-drag={dragging}
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle() }
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); setPulse((n) => n + 1) }
         else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
           e.preventDefault()
-          const v = Math.min(1, Math.max(0, Math.round((volume + (e.key === "ArrowRight" ? 0.05 : -0.05)) * 100) / 100))
+          const v = clamp(volume + (e.key === "ArrowRight" ? 0.05 : -0.05))
           setVolume(v); if (on) preview(v)
         }
       }}
       onPointerDown={(e) => {
         if (e.pointerType === "mouse" && e.button !== 0) return
-        drag.current = { x: e.clientX, vol: volume, w: Math.max(1, e.currentTarget.getBoundingClientRect().width), moved: false }
+        const r = e.currentTarget.getBoundingClientRect()
+        drag.current = { x: e.clientX, vol: volume, w: Math.max(1, r.width), moved: false }
+        setRipple({ id: Date.now(), x: e.clientX - r.left, y: e.clientY - r.top })
         try { e.currentTarget.setPointerCapture(e.pointerId) } catch {}
       }}
       onPointerMove={(e) => {
         const d = drag.current
         if (!d) return
         const dx = e.clientX - d.x
-        if (!d.moved && Math.abs(dx) < 8) return // small wobble of a tap is not a swipe
-        d.moved = true
-        setVolume(Math.min(1, Math.max(0, Math.round((d.vol + dx / d.w) * 100) / 100)))
+        if (!d.moved && Math.abs(dx) < 8) return // the small wobble of a tap is not a swipe
+        if (!d.moved) { d.moved = true; setDragging(true) }
+        setVolume(clamp(d.vol + dx / d.w))
       }}
       onPointerUp={(e) => {
         const d = drag.current
-        drag.current = null
         if (!d) return
-        if (d.moved) { if (on) preview(Math.min(1, Math.max(0, Math.round((d.vol + (e.clientX - d.x) / d.w) * 100) / 100))) }
+        end()
+        setPulse((n) => n + 1)
+        if (d.moved) { if (on) preview(d.vol + (e.clientX - d.x) / d.w) }
         else onToggle()
       }}
-      onPointerCancel={() => { drag.current = null }}
+      onPointerCancel={end}
       onContextMenu={(e) => e.preventDefault()}
       style={{ touchAction: "pan-y" }}
-      className={`${box} relative overflow-hidden min-h-[52px] px-3 py-1 flex items-center gap-2.5 select-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-emerald-500`}
+      className={`${box} cs-row relative overflow-hidden min-h-[56px] px-3 py-1 flex items-center gap-2.5 select-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-emerald-500`}
     >
+      {/* scale marks (10 steps) */}
+      <div aria-hidden className="cs-scale absolute inset-x-0 bottom-0 h-1.5 text-emerald-600 dark:text-emerald-300" />
       {/* volume fill = the bar attached to the button */}
-      <div aria-hidden className={`absolute inset-y-0 left-0 bg-emerald-500/25 ${on ? "" : "opacity-40"}`} style={{ width: `${pct}%` }} />
-      <span className="relative shrink-0 text-muted-foreground">{on && volume > 0 ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}</span>
-      <span className="relative min-w-0 flex-1">
-        <span className="block text-sm font-bold">Click sound <span className="text-xs font-semibold tabular-nums opacity-60">{pct}%</span></span>
-        <span className="block text-xs text-muted-foreground">Tap: on / off · Swipe left / right: volume</span>
+      <div aria-hidden data-off={!on} className="cs-fill absolute inset-y-0 left-0" style={{ width: `${pct}%` }}>
+        <span className="cs-edge" />
+      </div>
+      {/* tap ripple */}
+      {ripple && <span key={ripple.id} aria-hidden className="cs-ripple" style={{ left: ripple.x, top: ripple.y }} onAnimationEnd={() => setRipple(null)} />}
+
+      <span key={pulse} className={`relative shrink-0 h-12 w-8 flex items-center justify-center ${on ? "text-emerald-600 dark:text-emerald-300" : "text-muted-foreground"} ${pulse > 0 ? "cs-pop" : ""}`}>
+        <SpeakerIcon level={volume} muted={!on || volume === 0} />
       </span>
+
+      <span className="relative min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 text-sm font-bold">
+          Click sound
+          <span className={`cs-badge text-[11px] font-bold tabular-nums rounded-full px-1.5 py-px ${dragging ? "cs-badge-on" : ""}`}>{pct}%</span>
+        </span>
+        <span className="flex items-center gap-0.5 text-xs text-muted-foreground h-4">
+          {dragging ? (
+            <span className="cs-fade">Release to set volume</span>
+          ) : (
+            <>
+              <ChevronLeft className="cs-nudge-l h-3 w-3 shrink-0" />
+              <span className="truncate">Swipe for volume</span>
+              <ChevronRight className="cs-nudge-r h-3 w-3 shrink-0" />
+            </>
+          )}
+        </span>
+      </span>
+
       <span aria-hidden className="relative h-12 w-14 shrink-0 flex items-center justify-center">
-        <span className={`relative block h-6 w-11 rounded-full transition-colors ${on ? "bg-emerald-500" : "bg-black/20 dark:bg-white/20"}`}>
-          <span className={`absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white shadow transition-all ${on ? "left-[23px]" : "left-[3px]"}`} />
+        <span className={`relative block h-6 w-11 rounded-full transition-colors duration-300 ${on ? "bg-emerald-500" : "bg-black/20 dark:bg-white/20"}`}>
+          <span className="cs-knob absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white shadow" style={{ left: on ? 23 : 3 }} />
         </span>
       </span>
     </div>
