@@ -336,21 +336,35 @@ body {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
-/* Auto-fit: the root keeps a small, screen-relative gutter so the card never touches / overflows the frame edge.
-   (Cards already use `w-full max-w-md max-h-full overflow-y-auto`, so they shrink + scroll inside this box.) */
+/* FULL-PAGE FIT: the panel has a SOLID background (light #f1f4f1 / dark #0b0f14) but no border / shadow / rounding / side gutters —
+   its items fill the WHOLE frame edge to edge (the items keep their own glass tiles). Content scrolls inside when it is taller. */
 .panel-layer .absolute.inset-0[class*="z-["] {
   box-sizing: border-box;
-  padding-inline: clamp(6px, 2.2vmin, 18px);
+  padding: 0;
   min-height: 0;
   min-width: 0;
 }
-/* the card of a flex-centred root: never wider/taller than the frame, centred, content scrolls inside */
-.panel-layer .absolute.inset-0[class*="z-["].flex > div {
-  max-width: min(100%, 32rem);
-  max-height: 100%;
-  min-height: 0;
+.panel-layer .absolute.inset-0[class*="z-["] > div {
+  box-sizing: border-box;
+  width: 100% !important;
+  max-width: none !important;
+  height: 100%;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: #f1f4f1 !important;                 /* solid panel background (not transparent, not a dark dim) */
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  padding: clamp(8px, 2vmin, 14px) !important;
+  overflow-y: auto;
   overscroll-behavior: contain;
 }
+.dark .panel-layer .absolute.inset-0[class*="z-["] > div { background: #0b0f14 !important; }
+/* keep the title row clear of the frame's own close (x) button (top-right, 40 px) */
+.panel-layer .absolute.inset-0[class*="z-["] > div > :first-child { padding-right: 52px; }
 
 /* ═════════════ Reusable modal (use for NEW popups; same look as the existing panels) ═════════════
    <div class="snake-modal" data-open="true">            <- overlay root (transparent, centres the card, click to close)
@@ -362,7 +376,7 @@ body {
 .snake-modal {
   position: absolute; inset: 0; z-index: 10;            /* fills its container (the game frame), not the whole page */
   display: none; place-items: center;
-  padding: clamp(6px, 2.2vmin, 18px);
+  padding: 0;
   box-sizing: border-box;
   background: transparent;                              /* ← no dark overlay */
   -webkit-backdrop-filter: none; backdrop-filter: none;
@@ -370,13 +384,9 @@ body {
 .snake-modal[data-open="true"] { display: grid; }
 .snake-modal__card {
   display: flex; flex-direction: column;
-  width: min(100%, 28rem);                              /* fits narrow screens, caps on wide ones */
-  max-height: 100%;                                     /* never taller than the frame */
+  width: 100%; height: 100%;                            /* fills the whole frame */
   overflow: hidden;
-  border-radius: clamp(16px, 4vmin, 24px);
-  background: #f1f4f1; color: #123321;
-  border: 1px solid rgba(0,0,0,.06);
-  box-shadow: 0 12px 40px rgba(0,0,0,.22);
+  background: #f1f4f1; color: #123321;            /* solid background */
   animation: panel-in .18s ease-out;
 }
 .snake-modal__head {
@@ -393,5 +403,5 @@ body {
   overflow-y: auto; overscroll-behavior: contain;
   padding: clamp(12px, 3vmin, 20px) clamp(14px, 3.4vmin, 22px) max(clamp(14px, 3vmin, 22px), env(safe-area-inset-bottom));
 }
-.dark .snake-modal__card { background: #0b0f14; color: #fff; border-color: rgba(255,255,255,.1); }
+.dark .snake-modal__card { background: #0b0f14; color: #fff; }
 .dark .snake-modal__close { background: rgba(255,255,255,.1); }
