@@ -26,6 +26,7 @@ import BattleRouter from "./battle-router" // picks classic MultiplayerBattle or
 import { RankPopup, MapPopup, SettingsPopup } from "./home-popups"
 import SmoothSnakeLayer from "./smooth-snake-layer"
 import { loadSmoothMove, saveSmoothMove } from "@/lib/smooth-move"
+import { useNotchScreen } from "@/hooks/use-notch-screen"
 import { RotateHint } from "./rotate-hint"
 import { PanelHostContext, type ViewId } from "./panel-host"
 
@@ -628,6 +629,8 @@ export default function SnakeGame() {
   const [smoothMove, setSmoothMove] = useState(true)
   useEffect(() => setSmoothMove(loadSmoothMove()), [])
   useEffect(() => saveSmoothMove(smoothMove), [smoothMove])
+  // "Notch Display / Safe Area Cutout": applied to <html data-notch>, so the layout reacts instantly (see lib/notch.ts)
+  const { notchSafe, setNotchSafe } = useNotchScreen()
   // Random snake start position (head + direction), regenerated on every mode change
   const [snakeStart, setSnakeStart] = useState(() => getRandomSnakeStart([]))
   // Whether the canvas shows the mode preview (start screen, or game-over after a swipe)
@@ -2308,6 +2311,8 @@ export default function SnakeGame() {
           hapticSupported={!mounted || isVibrationSupported()}
           smoothMove={smoothMove}
           setSmoothMove={(v) => { triggerHaptic(15); setSmoothMove(v) }}
+          notchSafe={notchSafe}
+          setNotchSafe={(v) => { triggerHaptic(15); setNotchSafe(v) }}
           clickSound={clickSound}
           setClickSound={(v) => {
             setClickSound(v)

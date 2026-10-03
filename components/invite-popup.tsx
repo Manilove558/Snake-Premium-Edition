@@ -67,7 +67,7 @@ export default function InvitePopup({ darkMode, onAccept }: Props) {
   }
 
   return (
-    <div style={{ bottom: "max(16px, env(safe-area-inset-bottom))" }} className="fixed inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none safe-area-px">
+    <div style={{ bottom: "max(16px, var(--sai-bottom))" }} className="fixed inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none safe-area-px">
       {error && (
         <div className="pointer-events-auto max-w-sm w-full text-xs px-3 py-2 rounded-xl bg-red-500/15 text-red-600 dark:text-red-400 text-center">
           {error}

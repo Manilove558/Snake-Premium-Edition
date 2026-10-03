@@ -77,7 +77,7 @@ function MailboxSheet({ uid, items, claimable, onClose }: { uid: string; items: 
       <div
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-md max-h-full flex flex-col rounded-3xl bg-[#f1f4f1] dark:bg-[#0b0f14] border border-black/5 dark:border-white/10 p-5 shadow-2xl animate-fade-in text-[#123321] dark:text-white"
-        style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }}
+        style={{ paddingBottom: "max(20px, var(--sai-bottom))" }}
       >
         <div className="flex items-center justify-between mb-3 shrink-0">
           <div className="flex items-center gap-2">

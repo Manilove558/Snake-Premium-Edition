@@ -115,6 +115,23 @@ body {
   color-scheme: light dark;
 }
 
+/* ---- Notch Display / Safe Area (see lib/notch.ts) ----
+   Every layout rule reads --sai-* instead of env(safe-area-inset-*), so the Settings toggle can switch the whole app
+   between "respect the notch" (data-notch="on", default) and "edge-to-edge" (data-notch="off") with one attribute.
+   Needs viewport-fit=cover (set in app/layout.tsx) — without it the browser reports all insets as 0. */
+:root {
+  --sai-top: env(safe-area-inset-top, 0px);
+  --sai-right: env(safe-area-inset-right, 0px);
+  --sai-bottom: env(safe-area-inset-bottom, 0px);
+  --sai-left: env(safe-area-inset-left, 0px);
+}
+html[data-notch="off"] {
+  --sai-top: 0px;
+  --sai-right: 0px;
+  --sai-bottom: 0px;
+  --sai-left: 0px;
+}
+
 html,
 body {
   height: 100%;
@@ -124,14 +141,14 @@ body {
 
 /* Safe-area aware padding so controls never sit under phone UI chrome */
 .safe-area-px {
-  padding-left: max(1rem, env(safe-area-inset-left));
-  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-left: max(1rem, var(--sai-left));
+  padding-right: max(1rem, var(--sai-right));
 }
 .safe-area-pb {
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-bottom: max(1rem, var(--sai-bottom));
 }
 .safe-area-pt {
-  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-top: max(1rem, var(--sai-top));
 }
 
 @keyframes snake-pulse {
@@ -194,10 +211,10 @@ body {
   min-height: 0;
   overflow: hidden;
   /* notch / curved corners / navigation bar never cover the UI */
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-right: env(safe-area-inset-right, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  padding-left: env(safe-area-inset-left, 0px);
+  padding-top: var(--sai-top);
+  padding-right: var(--sai-right);
+  padding-bottom: var(--sai-bottom);
+  padding-left: var(--sai-left);
 }
 .rotate-hint { display: none; }
 /* touch devices held in portrait (browser / PWA; the Android app is locked to landscape) */
@@ -416,7 +433,7 @@ body {
 .snake-modal__body {
   flex: 1 1 auto; min-height: 0;                        /* min-height:0 lets the flex child shrink so it can scroll */
   overflow-y: auto; overscroll-behavior: contain;
-  padding: clamp(12px, 3vmin, 20px) clamp(14px, 3.4vmin, 22px) max(clamp(14px, 3vmin, 22px), env(safe-area-inset-bottom));
+  padding: clamp(12px, 3vmin, 20px) clamp(14px, 3.4vmin, 22px) max(clamp(14px, 3vmin, 22px), var(--sai-bottom));
 }
 .dark .snake-modal__card { background: #0b0f14; color: #fff; }
 .dark .snake-modal__close { background: rgba(255,255,255,.1); }

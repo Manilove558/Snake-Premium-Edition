@@ -85,7 +85,7 @@ function Section({ title, icon, sub, children }: { title: string; icon: React.Re
 function Toast({ msg }: { msg: string }) {
   if (!msg) return null
   return (
-    <div className="fixed z-[260] left-1/2 -translate-x-1/2 bottom-[max(24px,env(safe-area-inset-bottom))] max-w-[90vw] rounded-full px-5 py-2.5 text-sm font-semibold text-white bg-emerald-500 shadow-lg shadow-emerald-500/40 animate-fade-in">
+    <div className="fixed z-[260] left-1/2 -translate-x-1/2 bottom-[max(24px,var(--sai-bottom))] max-w-[90vw] rounded-full px-5 py-2.5 text-sm font-semibold text-white bg-emerald-500 shadow-lg shadow-emerald-500/40 animate-fade-in">
       {msg}
     </div>
   )
@@ -260,7 +260,7 @@ function Sheet({ title, onClose, children, compact }: { title: string; onClose: 
       <div
         onClick={(e) => e.stopPropagation()}
         className={`${compact ? "w-full max-w-[340px] max-h-[70%] rounded-3xl" : "w-full max-w-md max-h-[90%] rounded-t-3xl sm:rounded-3xl"} overflow-y-auto overscroll-contain text-[#123321] dark:text-white bg-[#f1f4f1] dark:bg-[#0b0f14] border border-black/5 dark:border-white/10 p-4 shadow-2xl animate-fade-in text-[#123321] dark:text-white`}
-        style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }}
+        style={{ paddingBottom: "max(20px, var(--sai-bottom))" }}
       >
         <div className="flex items-center justify-between mb-2.5">
           <h3 className="text-lg font-bold text-emerald-500">{title}</h3>
@@ -1079,7 +1079,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
   return (
     <div
       className="absolute inset-0 z-[10] backdrop-blur-md bg-black/25 dark:bg-black/50 text-[#123321] dark:text-white"
-      style={{ paddingTop: "max(8px, env(safe-area-inset-top))", paddingBottom: "max(8px, env(safe-area-inset-bottom))" }}
+      style={{ paddingTop: "max(8px, var(--sai-top))", paddingBottom: "max(8px, var(--sai-bottom))" }}
     >
       <div className="mx-2 sm:mx-auto max-w-2xl h-full flex flex-col rounded-3xl animate-fade-in shadow-2xl border border-white/40 dark:border-white/10 bg-[#f1f4f1]/95 dark:bg-[#0b0f14]/95 overflow-hidden">
         {/* header */}
