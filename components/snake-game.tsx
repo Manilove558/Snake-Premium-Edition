@@ -1139,11 +1139,9 @@ export default function SnakeGame() {
     if (!gameStarted || gameOver || countdown > 0 || isPaused) return
 
     const moveSnake = () => {
-      // Play walk sound when snake moves
-      // v19.0.1 audit fix: NO per-tick walk sound / haptic here. Every tick par
-      // buzz + audio clone chalane se phone constantly vibrate karta tha aur
-      // har tick par naya Audio node allocate hota tha. Sound/haptic sirf food
-      // eat aur game over par hote hain (neeche ateFood / doGameOver me dekho).
+      // Soft slither step sound (Web Audio, pre-decoded buffer: no per-tick Audio allocation, throttled + alternating variants).
+      // Haptics stay OFF per tick (only food / game over vibrate).
+      playWalkSound()
 
       // Process the next direction from the queue if available
       if (directionQueueRef.current.length > 0) {
@@ -1242,7 +1240,6 @@ export default function SnakeGame() {
       }
 
       if (ateFood) {
-        // Play food sound
         playFoodSound()
         earnCoins(2)
         // Stronger vibration when eating food

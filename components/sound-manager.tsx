@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef, useEffect, useCallback } from "react"
+import { playSfx, preloadSfx } from "@/lib/sfx"
 
 interface SoundManagerProps {
   enabled?: boolean
@@ -13,29 +14,20 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
   enabledRef.current = enabled
   const volumeRef = useRef(volume)
   volumeRef.current = volume
-  const walkSoundRef = useRef<HTMLAudioElement | null>(null)
-  const foodSoundRef = useRef<HTMLAudioElement | null>(null)
   const gameOverSoundRef = useRef<HTMLAudioElement | null>(null)
   const gameStartSoundRef = useRef<HTMLAudioElement | null>(null)
 
   // Initialize audio elements
   useEffect(() => {
     if (typeof window !== "undefined") {
-      walkSoundRef.current = new Audio("/sounds/snake-walk.mp3")
-      foodSoundRef.current = new Audio("/sounds/black_food.mp3")
       gameOverSoundRef.current = new Audio("/sounds/game-over.mp3")
       gameStartSoundRef.current = new Audio("/sounds/game-start.mp3")
-
-      // Set volume for walk sound (it might be played frequently)
-      if (walkSoundRef.current) {
-        walkSoundRef.current.volume = 0.3
-      }
+      // short, frequent cues are decoded once and played through Web Audio (instant, no per-play allocation)
+      preloadSfx(["walk-a", "walk-b", "food"])
     }
 
     // Cleanup
     return () => {
-      walkSoundRef.current = null
-      foodSoundRef.current = null
       gameOverSoundRef.current = null
       gameStartSoundRef.current = null
     }
@@ -51,21 +43,30 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
     [],
   )
 
+  // Snake step: soft "slither". Two variants played alternately + a little random pitch, throttled to 60 ms.
+  const lastStepRef = useRef({ t: 0, flip: false })
   const playWalkSound = useCallback(() => {
-    if (enabledRef.current && walkSoundRef.current) {
-      // Clone the audio to allow overlapping sounds
-      const walkSound = withVolume(walkSoundRef.current.cloneNode() as HTMLAudioElement, 0.3)
-      walkSound?.play().catch((err) => console.error("Error playing walk sound:", err))
-    }
-  }, [withVolume])
+    const v = volumeRef.current
+    if (!enabledRef.current || v <= 0) return
+    const now = performance.now()
+    if (now - lastStepRef.current.t < 60) return
+    lastStepRef.current.t = now
+    lastStepRef.current.flip = !lastStepRef.current.flip
+    playSfx(lastStepRef.current.flip ? "walk-a" : "walk-b", { gain: v, rate: 0.94 + Math.random() * 0.12 })
+  }, [])
 
+  // Food bite: quick bites in a row climb a major scale (up to an octave); a pause of 1.6 s resets it.
+  const biteRef = useRef({ t: 0, streak: 0 })
   const playFoodSound = useCallback(() => {
-    const el = withVolume(enabledRef.current ? foodSoundRef.current : null)
-    if (el) {
-      el.currentTime = 0
-      el.play().catch((err) => console.error("Error playing food sound:", err))
-    }
-  }, [withVolume])
+    const v = volumeRef.current
+    if (!enabledRef.current || v <= 0) return
+    const now = performance.now()
+    const b = biteRef.current
+    b.streak = now - b.t < 1600 ? Math.min(b.streak + 1, 7) : 0
+    b.t = now
+    const semis = [0, 2, 4, 5, 7, 9, 11, 12][b.streak]
+    playSfx("food", { gain: v * 0.9, rate: Math.pow(2, semis / 12) })
+  }, [])
 
   const playGameOverSound = useCallback(() => {
     const el = withVolume(enabledRef.current ? gameOverSoundRef.current : null)

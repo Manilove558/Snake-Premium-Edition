@@ -132,9 +132,9 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
 
   const serverNow = () => Date.now() + offsetRef.current
 
-  const { playFoodSound, playGameOverSound, playGameStartSound } = useSoundManager({ enabled: soundEnabled, volume })
-  const soundRef = useRef({ playFoodSound, playGameOverSound, playGameStartSound })
-  soundRef.current = { playFoodSound, playGameOverSound, playGameStartSound }
+  const { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound } = useSoundManager({ enabled: soundEnabled, volume })
+  const soundRef = useRef({ playWalkSound, playFoodSound, playGameOverSound, playGameStartSound })
+  soundRef.current = { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound }
 
   const phase = room?.status ?? "lobby"
   phaseRef.current = phase
@@ -319,6 +319,7 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
   // ---- one grid tick (classic 4-way movement) --------------------------------------
   const doTick = () => {
     if (!aliveRef.current || phaseRef.current !== "playing") return
+    soundRef.current.playWalkSound() // soft slither on every step
     const d = dirRef.current
     // a queued button press (oldest first) wins over the single pending slot
     if (dirQueueRef.current.length > 0) pendingDirRef.current = dirQueueRef.current.shift()!

@@ -122,13 +122,13 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   const [rankReward, setRankReward] = useState<{ coins: number; gems: number; tiers: string[] } | null>(null)
   const rankedRef = useRef<RankedSession | null>(null)
 
-  // Battle sounds (food / death / countdown / win) — same sounds + volume as single-player
-  const { playFoodSound, playGameOverSound, playGameStartSound } = useSoundManager({
+  // Battle sounds (step / food / death / countdown / win) — same sounds + volume as single-player
+  const { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound } = useSoundManager({
     enabled: soundEnabled,
     volume,
   })
-  const soundRef = useRef({ playFoodSound, playGameOverSound, playGameStartSound })
-  soundRef.current = { playFoodSound, playGameOverSound, playGameStartSound }
+  const soundRef = useRef({ playWalkSound, playFoodSound, playGameOverSound, playGameStartSound })
+  soundRef.current = { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound }
 
   // Mutable game state (used inside the tick loop)
   const snakeRef = useRef<Seg[]>([])
@@ -348,6 +348,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   // --- main tick -------------------------------------------------------------
   const doTick = () => {
     if (!aliveRef.current || phaseRef.current !== "playing") return
+    soundRef.current.playWalkSound() // soft slither on every step
     const d = dirRef.current
     // a queued button press (oldest first) wins over the single pending slot
     if (dirQueueRef.current.length > 0) pendingDirRef.current = dirQueueRef.current.shift()!
