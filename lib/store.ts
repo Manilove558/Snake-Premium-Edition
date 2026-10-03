@@ -752,5 +752,12 @@ export function refreshCatalog(): Promise<void> { catalogLoading = false; return
 /** Equipped slot item, guaranteed: falls back to the coded default for the slot. */
 const SLOT_DEFAULT: Record<"skin" | "trail" | "food", string> = { skin: "skin_classic", trail: "trail_none", food: "food_classic" }
 export function equippedItem(kind: "skin" | "trail" | "food", id: string): StoreItem {
-  return getCatalogItem(id) ?? ITEM_BY_ID[SLOT_DEFAULT[kind]]
+  const fallback = ITEM_BY_ID[SLOT_DEFAULT[kind]]
+  const it = getCatalogItem(id)
+  if (!it || it.kind !== kind) return fallback // unknown / wrong-kind id (e.g. bad admin data) -> default look
+  // a palette must be a non-empty list of colour strings, otherwise draw it as the plain default instead of crashing the canvas
+  if (it.palette !== undefined && !(Array.isArray(it.palette) && it.palette.length > 0 && it.palette.every((c) => typeof c === "string"))) {
+    return { ...it, palette: undefined }
+  }
+  return it
 }

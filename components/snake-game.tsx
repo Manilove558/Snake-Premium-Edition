@@ -31,6 +31,7 @@ import { PanelHostContext, type ViewId } from "./panel-host"
 import { useBackButton } from "@/hooks/use-back-button"
 import { useNotchScreen } from "@/hooks/use-notch-screen"
 import { ConfirmDialog } from "./confirm-dialog"
+import { ErrorBoundary } from "./error-boundary"
 import { installBackGuard, setBackFallback, exitApplication, dispatchBack, backStackDepth } from "@/lib/back-stack"
 
 // Left strip on the home screen keeps room for future buttons. Set to false to hide the dashed placeholders.
@@ -1608,7 +1609,10 @@ export default function SnakeGame() {
   }
 
   // Draw game
+  // NOTE: this effect re-runs the moment a newly bought item is auto-equipped. An exception thrown out of a useEffect unmounts the
+  // WHOLE React tree (blank white screen), so the body is guarded: a bad skin / trail / food can at worst skip one frame.
   useEffect(() => {
+    try {
     if (!canvasRef.current) return
 
     const canvas = canvasRef.current
@@ -1908,6 +1912,9 @@ export default function SnakeGame() {
       ctx.textBaseline = "alphabetic"
       ctx.restore()
     }
+    } catch (err) {
+      console.error("[draw] canvas draw failed", err)
+    }
   }, [
     skinItem,
     trailItem,
@@ -2145,10 +2152,10 @@ export default function SnakeGame() {
             className={`${playing ? "hidden" : "grid"} justify-items-center gap-1.5 [&>button]:border [&>button]:border-black/10 dark:[&>button]:border-white/10 [&>button]:bg-white/60 dark:[&>button]:bg-white/5`}
             style={{ gridTemplateColumns: "repeat(auto-fit, minmax(48px, 1fr))" }}
           >
-            <SnakeProfile />
-            <SnakeFriends />
-            <MailboxButton />
-            <SnakeStore />
+            <ErrorBoundary name="Profile" onClose={() => setActiveView("GAME")}><SnakeProfile /></ErrorBoundary>
+            <ErrorBoundary name="Friends" onClose={() => setActiveView("GAME")}><SnakeFriends /></ErrorBoundary>
+            <ErrorBoundary name="Mailbox" onClose={() => setActiveView("GAME")}><MailboxButton /></ErrorBoundary>
+            <ErrorBoundary name="Store" onClose={() => setActiveView("GAME")}><SnakeStore /></ErrorBoundary>
             <button
               aria-label="Settings"
               title="Settings"
@@ -2158,8 +2165,8 @@ export default function SnakeGame() {
             >
               <Settings className="h-5 w-5" />
             </button>
-            <AdminButton />
-            <SnakeVault />
+            <ErrorBoundary name="Admin" onClose={() => setActiveView("GAME")}><AdminButton /></ErrorBoundary>
+            <ErrorBoundary name="Vault" onClose={() => setActiveView("GAME")}><SnakeVault /></ErrorBoundary>
             {/* Close (x): the ONLY close button for the central-frame panels (the floating one at the frame corner was removed). Android Back also closes. */}
             {shownView !== "GAME" && shownView !== "MULTIPLAYER" && (
               <button
