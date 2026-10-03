@@ -2089,7 +2089,7 @@ export default function SnakeGame() {
         {!playing && !inBattle && <div className="shrink-0 text-center text-[10px] opacity-50">Swipe ← → on the game to change mode</div>}
 
         {/* Panel layer: Store / Vault / Settings / Rank / Map / Profile / Friends / Mailbox / Admin / Multiplayer render in here */}
-        <div ref={setFrameEl} className={`panel-layer absolute inset-0 z-20 overflow-hidden rounded-2xl ${shownView === "GAME" ? "hidden" : ""}`} />
+        <div ref={setFrameEl} data-view={shownView} className={`panel-layer absolute inset-0 z-20 overflow-hidden rounded-2xl ${shownView === "GAME" ? "hidden" : ""}`} />
         {/* Close (x) at the top-right of the frame -> back to the game view (the lobby has its own Leave / Close) */}
         {shownView !== "GAME" && shownView !== "MULTIPLAYER" && (
           <button

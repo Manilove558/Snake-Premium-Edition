@@ -329,7 +329,7 @@ body {
    Every panel (Friends, Profile, Store, Vault, Mailbox, Admin, Lobby, popups ...) renders into `.panel-layer`
    inside a full-size overlay root (`absolute inset-0 z-[..]`, plus `fixed inset-0` sheets/confirm dialogs).
    Those roots carried `bg-black/30 backdrop-blur-md` etc. — removed here in ONE place, no per-panel edits. */
-.panel-layer .absolute.inset-0[class*="z-["],
+.panel-layer .absolute.inset-0:is([class*=" z-"], [class*="z-50"]),
 .panel-layer .fixed.inset-0 {
   background: transparent !important;
   background-color: transparent !important;
@@ -338,13 +338,13 @@ body {
 }
 /* FULL-PAGE FIT: the panel has a SOLID background (light #f1f4f1 / dark #0b0f14) but no border / shadow / rounding / side gutters —
    its items fill the WHOLE frame edge to edge (the items keep their own glass tiles). Content scrolls inside when it is taller. */
-.panel-layer .absolute.inset-0[class*="z-["] {
+.panel-layer .absolute.inset-0:is([class*=" z-"], [class*="z-50"]) {
   box-sizing: border-box;
   padding: 0;
   min-height: 0;
   min-width: 0;
 }
-.panel-layer .absolute.inset-0[class*="z-["] > div {
+.panel-layer .absolute.inset-0:is([class*=" z-"], [class*="z-50"]) > div {
   box-sizing: border-box;
   width: 100% !important;
   max-width: none !important;
@@ -362,9 +362,11 @@ body {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.dark .panel-layer .absolute.inset-0[class*="z-["] > div { background: #0b0f14 !important; }
+.dark .panel-layer .absolute.inset-0:is([class*=" z-"], [class*="z-50"]) > div { background: #0b0f14 !important; }
 /* keep the title row clear of the frame's own close (x) button (top-right, 40 px) */
-.panel-layer .absolute.inset-0[class*="z-["] > div > :first-child { padding-right: 52px; }
+.panel-layer .absolute.inset-0:is([class*=" z-"], [class*="z-50"]) > div > :first-child { padding-right: 52px; }
+/* the lobby has its own Leave / Close and no frame (x), so no extra gap there */
+.panel-layer[data-view="MULTIPLAYER"] .absolute.inset-0[class*=" z-"] > div > :first-child { padding-right: 0; }
 
 /* ═════════════ Reusable modal (use for NEW popups; same look as the existing panels) ═════════════
    <div class="snake-modal" data-open="true">            <- overlay root (transparent, centres the card, click to close)
