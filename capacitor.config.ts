@@ -5,9 +5,11 @@ const config: CapacitorConfig = {
   appName: 'Snake Premium',
   webDir: 'out',
   plugins: {
-    // Capacitor 8: injects correct --safe-area-inset-* CSS variables on Android (read by --sai-* in app/globals.css)
+    // MainActivity owns the window insets (WebView fills the WHOLE screen incl. the camera cut-out) and hands the real sizes
+    // to the page as --safe-area-inset-* CSS variables. 'disable' stops Capacitor from also padding the window, which is what
+    // left a white strip beside the camera hole. The Notch setting in the game decides whether the UI keeps clear of the insets.
     SystemBars: {
-      insetsHandling: 'css',
+      insetsHandling: 'disable',
     },
     FirebaseAuthentication: {
       // Sirf Google login chahiye, isliye baaki providers skip
