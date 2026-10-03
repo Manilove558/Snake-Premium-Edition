@@ -46,6 +46,39 @@ async function syncSystemBars(on: boolean): Promise<void> {
   }
 }
 
+/**
+ * Notch OFF = bars hidden. Android can bring them back (notification shade, nav bar swipe, Back, returning from another
+ * app), so whenever the window regains focus / the app resumes / Back is pressed, hide them again if the setting is OFF.
+ * "snake-window-focus" is fired by MainActivity.onWindowFocusChanged and by the Back handler (lib/back-stack.ts).
+ * Returns a cleanup. Call once (hooks/use-notch-screen.ts does).
+ */
+export function installNotchBarGuard(): () => void {
+  if (typeof window === "undefined") return () => {}
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const reapply = () => {
+    if (document.documentElement.getAttribute("data-notch") !== "off") return
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => { void syncSystemBars(false) }, 120) // small delay: let the shade / nav bar finish animating
+  }
+  window.addEventListener("snake-window-focus", reapply)
+  window.addEventListener("focus", reapply)
+  document.addEventListener("visibilitychange", reapply)
+  let appHandle: { remove: () => Promise<void> } | null = null
+  let disposed = false
+  import("@capacitor/app")
+    .then(({ App }) => App.addListener("resume", reapply))
+    .then((h) => { if (disposed) void h.remove(); else appHandle = h })
+    .catch(() => { /* plain web: nothing to do */ })
+  return () => {
+    disposed = true
+    if (timer) clearTimeout(timer)
+    window.removeEventListener("snake-window-focus", reapply)
+    window.removeEventListener("focus", reapply)
+    document.removeEventListener("visibilitychange", reapply)
+    void appHandle?.remove()
+  }
+}
+
 /** Flip the attribute the CSS listens to (instant, no React render involved) and sync the native system bars. */
 export function applyNotch(on: boolean): void {
   if (typeof document === "undefined") return

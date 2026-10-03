@@ -2,7 +2,7 @@
 
 // hooks/use-notch-screen.ts — React state for the Notch setting (persisted + applied to <html data-notch>).
 import { useCallback, useEffect, useState } from "react"
-import { applyNotch, loadNotch, NOTCH_DEFAULT, saveNotch } from "@/lib/notch"
+import { applyNotch, installNotchBarGuard, loadNotch, NOTCH_DEFAULT, saveNotch } from "@/lib/notch"
 
 export function useNotchScreen() {
   const [notchSafe, setNotchSafeState] = useState(NOTCH_DEFAULT)
@@ -12,6 +12,7 @@ export function useNotchScreen() {
     const v = loadNotch()
     setNotchSafeState(v)
     applyNotch(v)
+    return installNotchBarGuard() // keeps the bars hidden after the notification shade / Back / returning to the app
   }, [])
 
   const setNotchSafe = useCallback((v: boolean) => {

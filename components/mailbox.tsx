@@ -34,7 +34,8 @@ export function MailboxButton() {
       <button
         aria-label={badge > 0 ? `Mailbox, ${badge} nayi` : "Mailbox"}
         title="Mailbox"
-        onClick={() => setOpen(true)}
+        aria-pressed={open}
+        onClick={() => setOpen(!open)}
         className="relative d-pad-btn inline-flex items-center justify-center h-12 w-12 rounded-full hover:bg-accent hover:text-accent-foreground"
       >
         <Bell className={`h-5 w-5 ${badge > 0 ? "text-amber-500" : ""}`} />

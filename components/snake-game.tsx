@@ -31,7 +31,7 @@ import { PanelHostContext, type ViewId } from "./panel-host"
 import { useBackButton } from "@/hooks/use-back-button"
 import { useNotchScreen } from "@/hooks/use-notch-screen"
 import { ConfirmDialog } from "./confirm-dialog"
-import { installBackGuard, setBackFallback, exitApplication } from "@/lib/back-stack"
+import { installBackGuard, setBackFallback, exitApplication, dispatchBack, backStackDepth } from "@/lib/back-stack"
 
 // Left strip on the home screen keeps room for future buttons. Set to false to hide the dashed placeholders.
 const SHOW_FUTURE_STRIP = true
@@ -1996,10 +1996,12 @@ export default function SnakeGame() {
   const shownView: ViewId = activeView === "GAME" && mpView === "lobby" ? "MULTIPLAYER" : activeView
   const panelCtx = { activeView: shownView, setActiveView, frame: frameEl }
   const openLobby = () => { triggerHaptic(15); setMpView("lobby"); setActiveView("MULTIPLAYER") }
-  // Frame close (x): panels are driven by activeView, so closing = back to the game view
+  // Red close (x) = exactly the Android Back button: it goes through the same back stack, so it closes the TOP layer first
+  // (e.g. the admin "Items chuno" sheet, then the admin panel). If nothing is registered it just returns to the game view.
   const closeFrame = () => {
     triggerHaptic(15)
-    setActiveView("GAME")
+    if (backStackDepth() > 0) dispatchBack()
+    else setActiveView("GAME")
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -2131,16 +2133,6 @@ export default function SnakeGame() {
 
         {/* Panel layer: Store / Vault / Settings / Rank / Map / Profile / Friends / Mailbox / Admin / Multiplayer render in here */}
         <div ref={setFrameEl} data-view={shownView} className={`panel-layer absolute inset-0 z-20 overflow-hidden rounded-2xl ${shownView === "GAME" ? "hidden" : ""}`} />
-        {/* Close (x) at the top-right of the frame -> back to the game view (the lobby has its own Leave / Close) */}
-        {shownView !== "GAME" && shownView !== "MULTIPLAYER" && (
-          <button
-            aria-label="Close"
-            onClick={closeFrame}
-            className={`${glassBox} d-pad-btn absolute top-2 right-2 z-30 h-10 w-10 rounded-full flex items-center justify-center shadow-md active:scale-90 transition-transform`}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        )}
       </section>
 
       {/* RIGHT panel: icons, score, options (scrolls when the screen is short) + pinned Start button */}
@@ -2160,14 +2152,15 @@ export default function SnakeGame() {
             <button
               aria-label="Settings"
               title="Settings"
-              onClick={() => { triggerHaptic(15); setActiveView("SETTINGS") }}
+              aria-pressed={activeView === "SETTINGS"}
+              onClick={() => { triggerHaptic(15); setActiveView(activeView === "SETTINGS" ? "GAME" : "SETTINGS") }}
               className="d-pad-btn inline-flex items-center justify-center h-12 w-12 rounded-full hover:bg-accent hover:text-accent-foreground"
             >
               <Settings className="h-5 w-5" />
             </button>
             <AdminButton />
             <SnakeVault />
-            {/* Close (x): only while a panel is open in the central frame -> back to the game view */}
+            {/* Close (x): the ONLY close button for the central-frame panels (the floating one at the frame corner was removed). Android Back also closes. */}
             {shownView !== "GAME" && shownView !== "MULTIPLAYER" && (
               <button
                 aria-label="Close panel"
@@ -2246,8 +2239,8 @@ export default function SnakeGame() {
               )}
               <div className="text-[9px] tracking-[.2em] text-center opacity-45 font-bold">OPTIONS</div>
               <div className="grid grid-cols-2 gap-1.5">
-                {optBtn("Rank", <Trophy className={ic} />, () => setActiveView("RANK"), "gold")}
-                {optBtn("Map", <MapIcon className={ic} />, () => setActiveView("MAP"), "green")}
+                {optBtn("Rank", <Trophy className={ic} />, () => setActiveView(activeView === "RANK" ? "GAME" : "RANK"), "gold")}
+                {optBtn("Map", <MapIcon className={ic} />, () => setActiveView(activeView === "MAP" ? "GAME" : "MAP"), "green")}
                 {optBtn("Teleport", <Shuffle className={ic} />, () => setTeleportEnabled(!teleportEnabled), teleportEnabled ? "on" : "off")}
                 {optBtn("Grid", <Grid3x3 className={ic} />, () => setGridVisible(!gridVisible), gridVisible ? "on" : "off")}
               </div>

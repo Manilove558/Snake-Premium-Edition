@@ -49,7 +49,8 @@ export function AdminButton() {
       <button
         aria-label="Admin panel"
         title="Admin panel"
-        onClick={() => setOpen(true)}
+        aria-pressed={open}
+        onClick={() => setOpen(!open)}
         className="rounded-full d-pad-btn h-12 w-12 flex items-center justify-center bg-amber-400/20 text-amber-600 dark:text-amber-300 border border-amber-400/40"
       >
         <Shield className="h-5 w-5" />
@@ -253,6 +254,7 @@ function blankDraft(kind: Kind): StoreItem {
 }
 
 function Sheet({ title, onClose, children, compact }: { title: string; onClose: () => void; children: React.ReactNode; compact?: boolean }) {
+  useBackButton(true, () => onClose()) // Android Back / the red ✕ close this sheet before the admin panel itself
   // Portal into the central frame (outside the Admin panel) so the sheet — search box, tabs, list — always sits ON TOP of the
   // Admin page. Rendered inside it, the Admin card's animation/transform trapped the `fixed` sheet and its top got hidden.
   const target = usePanelTarget()

@@ -55,7 +55,7 @@ export function SnakeVault() {
 
   return (
     <>
-      <button aria-label="Vault" onClick={() => setOpen(true)} className="d-pad-btn inline-flex items-center justify-center h-12 w-12 rounded-full hover:bg-accent hover:text-accent-foreground">
+      <button aria-label="Vault" aria-pressed={open} onClick={() => setOpen(!open)} className="d-pad-btn inline-flex items-center justify-center h-12 w-12 rounded-full hover:bg-accent hover:text-accent-foreground">
         <Vault className="h-5 w-5" />
       </button>
       {open && createPortal(

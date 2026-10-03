@@ -467,7 +467,8 @@ export function SnakeFriends() {
     <>
       <button
         aria-label="Friends"
-        onClick={openPanel}
+        aria-pressed={open}
+        onClick={() => (open ? close() : openPanel())}
         className="d-pad-btn relative inline-flex items-center justify-center h-12 w-12 rounded-full hover:bg-accent hover:text-accent-foreground"
       >
         <UserPlus className="h-5 w-5" />

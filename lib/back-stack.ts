@@ -83,7 +83,11 @@ function installWebGuard(): Cleanup {
  */
 async function installNativeGuard(): Promise<Cleanup> {
   const { App } = await import("@capacitor/app")
-  const handle = await App.addListener("backButton", () => { dispatchBack() })
+  const handle = await App.addListener("backButton", () => {
+    dispatchBack()
+    // Back was pressed (maybe via a revealed nav bar): let the notch guard re-hide the system bars if that setting is OFF
+    window.dispatchEvent(new Event("snake-window-focus"))
+  })
   return () => { void handle.remove() }
 }
 

@@ -210,7 +210,7 @@ export function SnakeStore() {
   const Head = ({ t, n }: { t: string; n: number }) => <div className="text-[11px] uppercase tracking-wider text-muted-foreground mt-5">{t} <span className="opacity-60">· {n}</span></div>
   return (
     <>
-      <button aria-label="Store" onClick={() => setOpen(true)} className="d-pad-btn inline-flex items-center justify-center h-12 w-12 rounded-full hover:bg-accent hover:text-accent-foreground">
+      <button aria-label="Store" aria-pressed={open} onClick={() => setOpen(!open)} className="d-pad-btn inline-flex items-center justify-center h-12 w-12 rounded-full hover:bg-accent hover:text-accent-foreground">
         <ShoppingBag className="h-5 w-5" />
       </button>
       {open && createPortal(
