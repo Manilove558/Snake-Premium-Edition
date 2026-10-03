@@ -35,6 +35,7 @@ import InvitePopup from "./invite-popup"
 import { joinRoom, leaveRoom } from "@/lib/multiplayer"
 import { useDisplayName } from "@/lib/profile-name"
 import { isVip } from "@/lib/store"
+import { CountdownOverlay } from "@/components/countdown-overlay"
 import { removeRoomInvite, type RoomInvite } from "@/lib/invites"
 
 // Game constants
@@ -631,10 +632,14 @@ export default function SnakeGame() {
   const [modePreviewActive, setModePreviewActive] = useState(true)
 
   // Add sound manager
-  const { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound } = useSoundManager({
+  const { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound } = useSoundManager({
     enabled: soundEnabled,
     volume,
   })
+  // 3 · 2 · 1 tick: one rising note per number (the "GO" cue is the existing game-start sound)
+  useEffect(() => {
+    if (countdown > 0) playCountdownSound(countdown)
+  }, [countdown, playCountdownSound])
   // Click sound on every button / tap in the whole app. Own switch in Settings; NOT affected by the mute icon, follows the volume bar
   const [clickSound, setClickSound] = useState(true)
   useEffect(() => setClickSound(loadClickSound()), [])
@@ -1879,35 +1884,7 @@ export default function SnakeGame() {
       drawHudPill(`${activeMode.name} · ${activeModeIndex + 1}/${MODE_LIST.length}`, 6, 6)
     }
 
-    // Draw countdown if active
-    if (countdown > 0) {
-      // Semi-transparent blurred overlay
-      const overlay = ctx.createRadialGradient(
-        canvas.width / 2,
-        canvas.height / 2,
-        10,
-        canvas.width / 2,
-        canvas.height / 2,
-        canvas.width / 1.2,
-      )
-      overlay.addColorStop(0, "rgba(0,0,0,0.55)")
-      overlay.addColorStop(1, "rgba(0,0,0,0.8)")
-      ctx.fillStyle = overlay
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-      // Draw countdown number with glow — big arcade style
-      ctx.save()
-      ctx.shadowColor = "rgba(34, 217, 122, 0.95)"
-      ctx.shadowBlur = 32
-      ctx.fillStyle = "#ffffff"
-      ctx.font = "900 110px 'Arial Black', 'Segoe UI Black', Impact, sans-serif"
-      ctx.textAlign = "center"
-      ctx.textBaseline = "middle"
-      ctx.fillText(countdown.toString(), canvas.width / 2, canvas.height / 2)
-      ctx.textAlign = "start"
-      ctx.textBaseline = "alphabetic"
-      ctx.restore()
-    }
+    // (3·2·1 countdown is now a DOM overlay: <CountdownOverlay/>, see the canvas wrapper)
 
     // Draw paused overlay
     if (isPaused) {
@@ -2092,6 +2069,7 @@ export default function SnakeGame() {
               className="block w-full h-full touch-none"
               style={{ imageRendering: "auto" }}
             />
+            <CountdownOverlay value={countdown} sub={activeMode.name} />
             <SmoothSnakeLayer
               snake={snake}
               active={smoothMove && gameStarted && !gameOver}

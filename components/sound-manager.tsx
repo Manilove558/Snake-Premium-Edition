@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useEffect, useCallback } from "react"
-import { playSfx, preloadSfx } from "@/lib/sfx"
+import { playSfx, preloadSfx, playCountdownTick } from "@/lib/sfx"
 
 interface SoundManagerProps {
   enabled?: boolean
@@ -23,7 +23,7 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
       gameOverSoundRef.current = new Audio("/sounds/game-over.mp3")
       gameStartSoundRef.current = new Audio("/sounds/game-start.mp3")
       // short, frequent cues are decoded once and played through Web Audio (instant, no per-play allocation)
-      preloadSfx(["walk-a", "walk-b", "food"])
+      preloadSfx(["walk-a", "walk-b", "walk-c", "food"])
     }
 
     // Cleanup
@@ -43,16 +43,24 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
     [],
   )
 
-  // Snake step: soft "slither". Two variants played alternately + a little random pitch, throttled to 60 ms.
-  const lastStepRef = useRef({ t: 0, flip: false })
+  // Snake step: soft scale-rustle "slither". Three variants cycle (never the same one twice in a row) + a touch of random pitch, throttled to 60 ms.
+  const lastStepRef = useRef({ t: 0, i: 0 })
   const playWalkSound = useCallback(() => {
     const v = volumeRef.current
     if (!enabledRef.current || v <= 0) return
     const now = performance.now()
     if (now - lastStepRef.current.t < 60) return
     lastStepRef.current.t = now
-    lastStepRef.current.flip = !lastStepRef.current.flip
-    playSfx(lastStepRef.current.flip ? "walk-a" : "walk-b", { gain: v, rate: 0.94 + Math.random() * 0.12 })
+    lastStepRef.current.i = (lastStepRef.current.i + 1 + Math.floor(Math.random() * 2)) % 3
+    const name = ["walk-a", "walk-b", "walk-c"][lastStepRef.current.i]
+    playSfx(name, { gain: v * 0.9, rate: 0.95 + Math.random() * 0.1 })
+  }, [])
+
+  // Countdown 3 / 2 / 1 tick (rising notes), follows the master volume + mute
+  const playCountdownSound = useCallback((n: number) => {
+    const v = volumeRef.current
+    if (!enabledRef.current || v <= 0) return
+    playCountdownTick(n, v)
   }, [])
 
   // Food bite: quick bites in a row climb a major scale (up to an octave); a pause of 1.6 s resets it.
@@ -89,6 +97,7 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
     playFoodSound,
     playGameOverSound,
     playGameStartSound,
+    playCountdownSound,
   }
 }
 

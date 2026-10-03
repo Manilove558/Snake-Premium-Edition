@@ -48,6 +48,7 @@ import {
 import { armDisconnectPenalty, fetchRankedRecords, isGoogleUser, writeRankedUpdates, type RankedWrite } from "@/lib/ranked-db"
 import { VipCrown } from "./vip-crown"
 import { antiGhostProps } from "@/lib/anti-ghost"
+import { CountdownOverlay } from "@/components/countdown-overlay"
 
 const CELL = 18 // battle arena render size (bigger on phones)
 const BW = 20
@@ -123,12 +124,12 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   const rankedRef = useRef<RankedSession | null>(null)
 
   // Battle sounds (step / food / death / countdown / win) — same sounds + volume as single-player
-  const { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound } = useSoundManager({
+  const { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound } = useSoundManager({
     enabled: soundEnabled,
     volume,
   })
-  const soundRef = useRef({ playWalkSound, playFoodSound, playGameOverSound, playGameStartSound })
-  soundRef.current = { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound }
+  const soundRef = useRef({ playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound })
+  soundRef.current = { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound }
 
   // Mutable game state (used inside the tick loop)
   const snakeRef = useRef<Seg[]>([])
@@ -443,9 +444,12 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
 
+  const prevPhaseSndRef = useRef<string>("")
   // --- countdown + win jingles -------------------------------------------------
   useEffect(() => {
-    if (phase === "countdown") soundRef.current.playGameStartSound()
+    // "GO" cue when the countdown hands over to play (the 3·2·1 ticks are played from countdownNum below)
+    if (phase === "playing" && prevPhaseSndRef.current === "countdown") soundRef.current.playGameStartSound()
+    prevPhaseSndRef.current = phase
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
   useEffect(() => {
@@ -865,6 +869,9 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   // --- derived UI ------------------------------------------------------------------
   const countdownEndsAt = room?.game?.countdownEndsAt ?? 0
   const countdownNum = phase === "countdown" ? Math.max(1, Math.ceil((countdownEndsAt - nowTs) / 1000)) : 0
+  useEffect(() => {
+    if (countdownNum > 0) soundRef.current.playCountdownSound(countdownNum)
+  }, [countdownNum])
   const leaderboard = Object.values(room?.players ?? {}).sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
   const winner = room?.status === "ended" ? room.players?.[room.game?.winner ?? ""] : null
 
@@ -899,16 +906,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
             className="block w-full h-full touch-none"
             style={{ imageRendering: "auto" }}
           />
-          {phase === "countdown" && countdownNum > 0 && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span
-                className="font-black text-white"
-                style={{ fontSize: 110, fontFamily: "'Arial Black','Segoe UI Black',Impact,sans-serif", textShadow: "0 0 32px rgba(34,217,122,0.95)" }}
-              >
-                {countdownNum}
-              </span>
-            </div>
-          )}
+          <CountdownOverlay value={phase === "countdown" ? countdownNum : 0} label="BATTLE STARTS" />
           {phase === "playing" && !aliveRef.current && (
             <div className="absolute inset-x-0 top-2 flex justify-center">
               <div className="px-3 py-1.5 rounded-xl bg-black/70 text-white text-xs font-semibold flex items-center gap-1.5">

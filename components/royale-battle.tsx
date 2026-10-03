@@ -51,6 +51,7 @@ import { useBotHost } from "@/hooks/use-bot-host"
 import { BotTag } from "./bot-tag"
 import { sampleTickMs } from "@/lib/smooth-move"
 import { antiGhostProps } from "@/lib/anti-ghost"
+import { CountdownOverlay } from "@/components/countdown-overlay"
 
 const CANVAS_PX = BR_VIEW_CELLS * BR_CELL // fixed 360 x 360 — only the camera window moves
 
@@ -132,9 +133,9 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
 
   const serverNow = () => Date.now() + offsetRef.current
 
-  const { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound } = useSoundManager({ enabled: soundEnabled, volume })
-  const soundRef = useRef({ playWalkSound, playFoodSound, playGameOverSound, playGameStartSound })
-  soundRef.current = { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound }
+  const { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound } = useSoundManager({ enabled: soundEnabled, volume })
+  const soundRef = useRef({ playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound })
+  soundRef.current = { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound }
 
   const phase = room?.status ?? "lobby"
   phaseRef.current = phase
@@ -390,8 +391,11 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
 
+  const prevPhaseSndRef = useRef<string>("")
   useEffect(() => {
-    if (phase === "countdown") soundRef.current.playGameStartSound()
+    // "GO" cue when the countdown hands over to play (the 3·2·1 ticks are played from countdownNum below)
+    if (phase === "playing" && prevPhaseSndRef.current === "countdown") soundRef.current.playGameStartSound()
+    prevPhaseSndRef.current = phase
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
 
@@ -594,6 +598,9 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
   const total = Math.max(room?.game?.order?.length ?? 0, players.length)
   const countdownEndsAt = room?.game?.countdownEndsAt ?? 0
   const countdownNum = phase === "countdown" ? Math.max(1, Math.ceil((countdownEndsAt - (nowTs + offsetRef.current)) / 1000)) : 0
+  useEffect(() => {
+    if (countdownNum > 0) soundRef.current.playCountdownSound(countdownNum)
+  }, [countdownNum])
   const ranking = [...players].sort((a, b) => Number(b.alive) - Number(a.alive) || (b.kills ?? 0) - (a.kills ?? 0) || (b.score ?? 0) - (a.score ?? 0))
   const placement =
     !iAmAlive && myPlayer ? 1 + players.filter((p) => p.alive || (p.diedAt ?? 0) > (myPlayer.diedAt ?? 0)).length : null
@@ -638,14 +645,7 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
             />
           )}
 
-          {phase === "countdown" && countdownNum > 0 && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/25">
-              <span className="font-black text-white" style={{ fontSize: 100, fontFamily: "'Arial Black','Segoe UI Black',Impact,sans-serif", textShadow: "0 0 32px rgba(34,217,122,0.95)" }}>
-                {countdownNum}
-              </span>
-              <span className="text-xs font-bold text-white/90">Battle Royale · {total} players</span>
-            </div>
-          )}
+          <CountdownOverlay value={phase === "countdown" ? countdownNum : 0} label="BATTLE ROYALE" sub={`${total} players`} />
 
           {phase === "ended" && room?.game?.zone && (
             <RoyaleVictory
