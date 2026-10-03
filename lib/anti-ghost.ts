@@ -5,12 +5,20 @@
 //    button and tapping another registers both.
 //  * The click that follows a touch / mouse press is ignored (detail > 0), so a stale click can never re-apply an old
 //    direction on top of a newer press. Keyboard activation (Enter / Space -> click with detail 0) still works.
+//  * Presses are accepted at most once every CONTROL_CLICK_INTERVAL_MS (10 ms).
 //  * Long-press context menu is blocked.
 import type { MouseEvent, PointerEvent } from "react"
 import { playButtonClickSound } from "@/lib/button-sound"
 
+/** Minimum gap between two accepted direction-button presses (all D-pads share it). Change this one number to tune. */
+export const CONTROL_CLICK_INTERVAL_MS = 10
+let lastPressAt = -Infinity
+
 export function antiGhostProps(fire: () => void) {
   const press = () => {
+    const now = performance.now()
+    if (now - lastPressAt < CONTROL_CLICK_INTERVAL_MS) return // 10 ms click interval: ignores bounce / double-fire
+    lastPressAt = now
     playButtonClickSound() // synthesized tick on every D-pad press
     fire()
   }

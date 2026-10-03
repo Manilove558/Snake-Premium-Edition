@@ -324,3 +324,74 @@ body {
   .cd-num, .cd-ring, .cd-label { animation: cd-bg-in .2s both; }
   .cd-wave { display: none; }
 }
+
+/* ═════════════ POPUP / PANEL OVERLAYS: no dark backdrop + auto-fit inside the central frame ═════════════
+   Every panel (Friends, Profile, Store, Vault, Mailbox, Admin, Lobby, popups ...) renders into `.panel-layer`
+   inside a full-size overlay root (`absolute inset-0 z-[..]`, plus `fixed inset-0` sheets/confirm dialogs).
+   Those roots carried `bg-black/30 backdrop-blur-md` etc. — removed here in ONE place, no per-panel edits. */
+.panel-layer .absolute.inset-0[class*="z-["],
+.panel-layer .fixed.inset-0 {
+  background: transparent !important;
+  background-color: transparent !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+/* Auto-fit: the root keeps a small, screen-relative gutter so the card never touches / overflows the frame edge.
+   (Cards already use `w-full max-w-md max-h-full overflow-y-auto`, so they shrink + scroll inside this box.) */
+.panel-layer .absolute.inset-0[class*="z-["] {
+  box-sizing: border-box;
+  padding-inline: clamp(6px, 2.2vmin, 18px);
+  min-height: 0;
+  min-width: 0;
+}
+/* the card of a flex-centred root: never wider/taller than the frame, centred, content scrolls inside */
+.panel-layer .absolute.inset-0[class*="z-["].flex > div {
+  max-width: min(100%, 32rem);
+  max-height: 100%;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+/* ═════════════ Reusable modal (use for NEW popups; same look as the existing panels) ═════════════
+   <div class="snake-modal" data-open="true">            <- overlay root (transparent, centres the card, click to close)
+     <section class="snake-modal__card" role="dialog" aria-modal="true">
+       <header class="snake-modal__head"><h2>Title</h2><button class="snake-modal__close" aria-label="Close">×</button></header>
+       <div class="snake-modal__body"> ... content (scrolls when tall) ... </div>
+     </section>
+   </div>                                                                                                         */
+.snake-modal {
+  position: absolute; inset: 0; z-index: 10;            /* fills its container (the game frame), not the whole page */
+  display: none; place-items: center;
+  padding: clamp(6px, 2.2vmin, 18px);
+  box-sizing: border-box;
+  background: transparent;                              /* ← no dark overlay */
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.snake-modal[data-open="true"] { display: grid; }
+.snake-modal__card {
+  display: flex; flex-direction: column;
+  width: min(100%, 28rem);                              /* fits narrow screens, caps on wide ones */
+  max-height: 100%;                                     /* never taller than the frame */
+  overflow: hidden;
+  border-radius: clamp(16px, 4vmin, 24px);
+  background: #f1f4f1; color: #123321;
+  border: 1px solid rgba(0,0,0,.06);
+  box-shadow: 0 12px 40px rgba(0,0,0,.22);
+  animation: panel-in .18s ease-out;
+}
+.snake-modal__head {
+  flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: clamp(12px, 3vmin, 20px) clamp(14px, 3.4vmin, 22px) 0;
+}
+.snake-modal__head h2 { margin: 0; font-size: clamp(18px, 4.6vmin, 26px); font-weight: 700; color: #10b981; }
+.snake-modal__close {
+  width: 40px; height: 40px; border-radius: 999px; border: 0; cursor: pointer;
+  background: rgba(0,0,0,.06); font-size: 22px; line-height: 1; color: inherit;
+}
+.snake-modal__body {
+  flex: 1 1 auto; min-height: 0;                        /* min-height:0 lets the flex child shrink so it can scroll */
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: clamp(12px, 3vmin, 20px) clamp(14px, 3.4vmin, 22px) max(clamp(14px, 3vmin, 22px), env(safe-area-inset-bottom));
+}
+.dark .snake-modal__card { background: #0b0f14; color: #fff; border-color: rgba(255,255,255,.1); }
+.dark .snake-modal__close { background: rgba(255,255,255,.1); }
