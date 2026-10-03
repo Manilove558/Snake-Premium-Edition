@@ -135,3 +135,27 @@ export async function dropFoodFromBody(code: string, seg: Cell[], box: ZoneBox):
   }
   if (Object.keys(updates).length > 0) await update(ref(db(), roomPath(code)), updates)
 }
+
+/** Winner of a finished match: the last snake alive; if nobody is (same-tick deaths) whoever lasted longest, kills break ties. */
+export function pickRoyaleWinner(players: MpPlayer[]): string | null {
+  const alive = players.filter((p) => p.alive)
+  if (alive.length > 0) return alive[0].id
+  return [...players].sort((a, b) => (b.diedAt ?? 0) - (a.diedAt ?? 0) || (b.kills ?? 0) - (a.kills ?? 0))[0]?.id ?? null
+}
+
+/**
+ * Finish the match. Safe to call from EVERY client, any number of times:
+ *   1. `game/endedAt` — first writer wins (tiny leaf node, so it never fights the 1 Hz food / bot-beat writes
+ *      that made a transaction on the whole `game` node retry and give up).
+ *   2. `game/winner`  — first writer wins too (clients may disagree on same-tick deaths).
+ *   3. `status`       — flips playing -> ended ONLY if the room is still "playing", so a late/slow client can never
+ *      clobber a room the host already sent back to the lobby (or into the next countdown).
+ * Step 3 runs even when another client won steps 1-2, so a winner-client that crashed half-way cannot leave the
+ * room stuck in "playing" forever.
+ */
+export async function finishBattleRoyale(code: string, winnerId: string | null, endedAt: number): Promise<void> {
+  const game = `${roomPath(code)}/game`
+  await runTransaction(ref(db(), `${game}/endedAt`), (cur) => (cur != null ? undefined : endedAt))
+  if (winnerId) await runTransaction(ref(db(), `${game}/winner`), (cur) => (cur != null ? cur : winnerId))
+  await runTransaction(ref(db(), `${roomPath(code)}/status`), (cur) => (cur === "playing" ? "ended" : undefined))
+}

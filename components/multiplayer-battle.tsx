@@ -126,12 +126,18 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   const rankedRef = useRef<RankedSession | null>(null)
 
   // Battle sounds (step / food / death / countdown / win) — same sounds + volume as single-player
-  const { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound } = useSoundManager({
+  const { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound, playEliminationSound } = useSoundManager({
     enabled: soundEnabled,
     volume,
   })
-  const soundRef = useRef({ playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound })
-  soundRef.current = { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound }
+  const soundRef = useRef({ playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound, playEliminationSound })
+  soundRef.current = { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound, playEliminationSound }
+  // SPECTATOR AUDIO bookkeeping: once I'm eliminated my own tick is silent, so cues come from what the network
+  // shows me — other snakes' steps, a snake getting longer (= a bite) and new kill-feed entries.
+  const specLenRef = useRef<Map<string, number>>(new Map())
+  const specWalkAtRef = useRef(0)
+  const killsSeenRef = useRef<Set<string>>(new Set())
+  const killsPrimedRef = useRef(false)
 
   // Mutable game state (used inside the tick loop)
   const snakeRef = useRef<Seg[]>([])
@@ -197,6 +203,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
         endedWriteRef.current = false
         if (prevStatusRef.current !== "countdown") {
           // Fresh round (first start or a direct Rematch): reset my local snake state
+          specLenRef.current.clear()
           aliveRef.current = true
           growthRef.current = 0
           appliedKillsRef.current.clear()
@@ -216,6 +223,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
       const v = (snap.val() ?? {}) as Record<string, MpSnakeState>
       snakesStateRef.current = v
       const nowP = performance.now()
+      const spectating = !aliveRef.current && phaseRef.current === "playing"
       for (const [pid, s] of Object.entries(v)) {
         if (pid === playerId) continue
         let r = remoteInterps.current.get(pid)
@@ -225,10 +233,27 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
         }
         if (r.ts !== s.ts) {
           r.ts = s.ts
-          pushGlide(r.interp, s.seg ?? [], nowP)
+          const seg = s.seg ?? []
+          pushGlide(r.interp, seg, nowP)
+          const prevLen = specLenRef.current.get(pid)
+          specLenRef.current.set(pid, seg.length) // tracked always, so the baseline exists the moment I die
+          if (spectating) {
+            // the whole arena is on screen: a bite from ANY snake is audible; steps are thinned out (one soft
+            // slither per ~120 ms in total) so seven snakes don't turn into a rattle
+            if (prevLen !== undefined && seg.length > prevLen) soundRef.current.playFoodSound(0.8)
+            if (nowP - specWalkAtRef.current > 120) {
+              specWalkAtRef.current = nowP
+              soundRef.current.playWalkSound(0.5)
+            }
+          }
         }
       }
-      for (const pid of [...remoteInterps.current.keys()]) if (!(pid in v)) remoteInterps.current.delete(pid)
+      for (const pid of [...remoteInterps.current.keys()]) {
+        if (!(pid in v)) {
+          remoteInterps.current.delete(pid)
+          specLenRef.current.delete(pid)
+        }
+      }
       setSnakes(v)
     })
     const unsubFood = onValue(foodRef(code), (snap) => {
@@ -247,6 +272,21 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
         if (it.killerId === playerId && !appliedKillsRef.current.has(it.key)) {
           appliedKillsRef.current.add(it.key)
           growthRef.current += 2
+        }
+      }
+      // SPECTATOR AUDIO: someone else was eliminated. The first snapshot only primes the "already heard" set.
+      if (!killsPrimedRef.current) {
+        for (const it of items) killsSeenRef.current.add(it.key)
+        killsPrimedRef.current = true
+      } else {
+        let heard = false
+        for (const it of items) {
+          if (killsSeenRef.current.has(it.key)) continue
+          killsSeenRef.current.add(it.key)
+          if (!heard && !aliveRef.current && phaseRef.current === "playing" && it.victimId !== playerId) {
+            heard = true
+            soundRef.current.playEliminationSound()
+          }
         }
       }
     })
@@ -455,9 +495,8 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
   useEffect(() => {
-    if (room?.status === "ended" && room.game?.winner === playerId && aliveRef.current) {
-      soundRef.current.playGameStartSound()
-    }
+    // match over: the fanfare plays for the winner AND for eliminated players watching the result
+    if (room?.status === "ended") soundRef.current.playGameStartSound()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room?.status])
 

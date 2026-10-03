@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useEffect, useCallback } from "react"
-import { playSfx, preloadSfx, playCountdownTick } from "@/lib/sfx"
+import { playSfx, preloadSfx, playCountdownTick, playElimination, playZoneWarning, playZoneShrink } from "@/lib/sfx"
 
 interface SoundManagerProps {
   enabled?: boolean
@@ -45,7 +45,9 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
 
   // Snake step: soft scale-rustle "slither". Three variants cycle (never the same one twice in a row) + a touch of random pitch, throttled to 60 ms.
   const lastStepRef = useRef({ t: 0, i: 0 })
-  const playWalkSound = useCallback(() => {
+  // `scale` (0..1) lets a spectator hear OTHER snakes more quietly than their own snake.
+  const playWalkSound = useCallback((scale = 1) => {
+    const s = typeof scale === "number" ? scale : 1
     const v = volumeRef.current
     if (!enabledRef.current || v <= 0) return
     const now = performance.now()
@@ -53,7 +55,7 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
     lastStepRef.current.t = now
     lastStepRef.current.i = (lastStepRef.current.i + 1 + Math.floor(Math.random() * 2)) % 3
     const name = ["walk-a", "walk-b", "walk-c"][lastStepRef.current.i]
-    playSfx(name, { gain: v * 0.9, rate: 0.95 + Math.random() * 0.1 })
+    playSfx(name, { gain: v * 0.9 * s, rate: 0.95 + Math.random() * 0.1 })
   }, [])
 
   // Countdown 3 / 2 / 1 tick (rising notes), follows the master volume + mute
@@ -65,7 +67,8 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
 
   // Food bite: quick bites in a row climb a major scale (up to an octave); a pause of 1.6 s resets it.
   const biteRef = useRef({ t: 0, streak: 0 })
-  const playFoodSound = useCallback(() => {
+  const playFoodSound = useCallback((scale = 1) => {
+    const s = typeof scale === "number" ? scale : 1
     const v = volumeRef.current
     if (!enabledRef.current || v <= 0) return
     const now = performance.now()
@@ -73,7 +76,22 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
     b.streak = now - b.t < 1600 ? Math.min(b.streak + 1, 7) : 0
     b.t = now
     const semis = [0, 2, 4, 5, 7, 9, 11, 12][b.streak]
-    playSfx("food", { gain: v * 0.9, rate: Math.pow(2, semis / 12) })
+    playSfx("food", { gain: v * 0.9 * s, rate: Math.pow(2, semis / 12) })
+  }, [])
+
+  // Events that happen to OTHER players / the zone (spectator audio + Battle Royale zone cues).
+  // They follow the same mute + master volume as every other cue.
+  const playEliminationSound = useCallback(() => {
+    if (!enabledRef.current || volumeRef.current <= 0) return
+    playElimination(volumeRef.current)
+  }, [])
+  const playZoneWarningSound = useCallback(() => {
+    if (!enabledRef.current || volumeRef.current <= 0) return
+    playZoneWarning(volumeRef.current)
+  }, [])
+  const playZoneShrinkSound = useCallback(() => {
+    if (!enabledRef.current || volumeRef.current <= 0) return
+    playZoneShrink(volumeRef.current)
   }, [])
 
   const playGameOverSound = useCallback(() => {
@@ -98,6 +116,9 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
     playGameOverSound,
     playGameStartSound,
     playCountdownSound,
+    playEliminationSound,
+    playZoneWarningSound,
+    playZoneShrinkSound,
   }
 }
 

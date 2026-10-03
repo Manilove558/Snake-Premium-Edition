@@ -12,14 +12,15 @@
 //   * camera window + minimap, shrinking zone with 3 s grace, spectator mode, victory stats
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { X, Skull, Crown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from "lucide-react"
-import { ref, set, update, remove, onValue, push, increment, onDisconnect, runTransaction, serverTimestamp } from "firebase/database"
+import { X, Skull, Crown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, RotateCcw, Loader2 } from "lucide-react"
+import { ref, set, update, remove, onValue, push, increment, onDisconnect, serverTimestamp } from "firebase/database"
 import { getFirebaseDb } from "@/lib/firebase"
 import {
   subscribeToRoom,
   subscribeServerOffset,
   leaveRoom,
   resetRoomForRematch,
+  claimHost,
   startBattle,
   snakesRef,
   mySnakeRef,
@@ -33,7 +34,7 @@ import {
   type KillEntry,
 } from "@/lib/multiplayer"
 import { BR_FOOD_REFILL_MS, BR_GRID, BR_CELL, BR_MIN_LENGTH, BR_START_LENGTH, BR_TICK_MS, BR_VIEW_CELLS, ZONE_TAIL_DAMAGE } from "@/lib/br/constants"
-import { claimFood, dropFoodFromBody, foodsRef, hostMaintainFood, type BrFoods } from "@/lib/br/net"
+import { claimFood, dropFoodFromBody, finishBattleRoyale, foodsRef, hostMaintainFood, pickRoyaleWinner, type BrFoods } from "@/lib/br/net"
 import { Camera } from "@/lib/br/camera"
 import { SnakeInterpolator } from "@/lib/br/interpolation"
 import { computeSpawns } from "@/lib/br/spawns"
@@ -71,6 +72,8 @@ export interface RoyaleBattleProps {
   smoothMove?: boolean
   onExit: () => void
   onBackToLobby: () => void
+  /** guest / spectator "Back to room" while the match is over: sit in the lobby until the host starts the next round */
+  onReturnToRoom?: () => void
 }
 
 interface Seg {
@@ -86,7 +89,7 @@ interface RemoteSnake {
   recvAt: number
 }
 
-export default function RoyaleBattle({ code, playerId, darkMode, controlMode, soundEnabled, volume, centerEl, sideEl, leftEl, smoothMove = true, onExit, onBackToLobby }: RoyaleBattleProps) {
+export default function RoyaleBattle({ code, playerId, darkMode, controlMode, soundEnabled, volume, centerEl, sideEl, leftEl, smoothMove = true, onExit, onBackToLobby, onReturnToRoom }: RoyaleBattleProps) {
   const [room, setRoom] = useState<MpRoom | null>(null)
   const [kills, setKills] = useState<KillItem[]>([])
   const [nowTs, setNowTs] = useState(Date.now())
@@ -128,14 +131,24 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
   const tickerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const onBackToLobbyRef = useRef(onBackToLobby)
   const onExitRef = useRef(onExit)
+  const onReturnToRoomRef = useRef(onReturnToRoom)
   onBackToLobbyRef.current = onBackToLobby
   onExitRef.current = onExit
+  onReturnToRoomRef.current = onReturnToRoom
+  // win-condition retry bookkeeping (see the "win condition" effect)
+  const endAttemptAtRef = useRef(0)
+  const [endRetry, setEndRetry] = useState(0)
+  // spectator audio bookkeeping: last seen length per remote snake (growth = a bite), kill-feed entries already heard
+  const specLenRef = useRef<Map<string, number>>(new Map())
+  const killsSeenRef = useRef<Set<string>>(new Set())
+  const killsPrimedRef = useRef(false)
+  const prevZoneSndRef = useRef({ warning: false, shrinking: false })
 
   const serverNow = () => Date.now() + offsetRef.current
 
-  const { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound } = useSoundManager({ enabled: soundEnabled, volume })
-  const soundRef = useRef({ playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound })
-  soundRef.current = { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound }
+  const { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound, playEliminationSound, playZoneWarningSound, playZoneShrinkSound } = useSoundManager({ enabled: soundEnabled, volume })
+  const soundRef = useRef({ playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound, playEliminationSound, playZoneWarningSound, playZoneShrinkSound })
+  soundRef.current = { playWalkSound, playFoodSound, playGameOverSound, playGameStartSound, playCountdownSound, playEliminationSound, playZoneWarningSound, playZoneShrinkSound }
 
   const phase = room?.status ?? "lobby"
   phaseRef.current = phase
@@ -183,6 +196,7 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
           appliedKillsRef.current.clear()
           claimingRef.current.clear()
           remotesRef.current.clear()
+          specLenRef.current.clear()
           myInterp.current.clear()
           cameraRef.current = new Camera()
           spectateRef.current = null
@@ -201,6 +215,10 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
       snakesRawRef.current = v
       const now = Date.now()
       const map = remotesRef.current
+      // SPECTATOR AUDIO: once I'm out, my own tick no longer makes any sound, so the cues come from what the
+      // network shows me: the followed snake's steps, and a snake getting longer = a bite (any snake in view).
+      const spectating = !aliveRef.current && phaseRef.current === "playing"
+      const cam = cameraRef.current
       for (const [pid, s] of Object.entries(v)) {
         if (pid === playerId) continue
         let rs = map.get(pid)
@@ -211,10 +229,26 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
         if (rs.ts !== s.ts) {
           rs.ts = s.ts
           rs.recvAt = now
-          rs.interp.push(s.seg ?? [], now) // feeds the 60 fps interpolation
+          const seg = s.seg ?? []
+          rs.interp.push(seg, now) // feeds the 60 fps interpolation
+          const prevLen = specLenRef.current.get(pid)
+          specLenRef.current.set(pid, seg.length) // tracked always, so the baseline exists the moment I die
+          if (spectating && seg.length > 0) {
+            const followed = pid === spectateRef.current
+            const hx = seg[0].x
+            const hy = seg[0].y
+            const inView = hx >= cam.originX - 1 && hx <= cam.originX + BR_VIEW_CELLS + 1 && hy >= cam.originY - 1 && hy <= cam.originY + BR_VIEW_CELLS + 1
+            if (followed) soundRef.current.playWalkSound(0.55)
+            if (inView && prevLen !== undefined && seg.length > prevLen) soundRef.current.playFoodSound(followed ? 0.9 : 0.5)
+          }
         }
       }
-      for (const pid of [...map.keys()]) if (!(pid in v)) map.delete(pid)
+      for (const pid of [...map.keys()]) {
+        if (!(pid in v)) {
+          map.delete(pid)
+          specLenRef.current.delete(pid)
+        }
+      }
     })
     const unsubFoods = onValue(foodsRef(code), (snap) => {
       const v = (snap.val() ?? {}) as BrFoods
@@ -235,6 +269,22 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
         if (it.killerId === playerId && !appliedKillsRef.current.has(it.key)) {
           appliedKillsRef.current.add(it.key)
           growthRef.current += 2
+        }
+      }
+      // SPECTATOR AUDIO: someone else was eliminated (collision / zone / wall). The first snapshot only primes the
+      // "already heard" set so entries from before I mounted are never replayed.
+      if (!killsPrimedRef.current) {
+        for (const it of items) killsSeenRef.current.add(it.key)
+        killsPrimedRef.current = true
+      } else {
+        let heard = false
+        for (const it of items) {
+          if (killsSeenRef.current.has(it.key)) continue
+          killsSeenRef.current.add(it.key)
+          if (!heard && !aliveRef.current && phaseRef.current === "playing" && it.victimId !== playerId) {
+            heard = true
+            soundRef.current.playEliminationSound() // one cue even if several fall in the same snapshot
+          }
         }
       }
     })
@@ -413,40 +463,44 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
   }, [isHost, phase, code])
 
   // ---- win condition: last snake standing ----------------------------------------------
+  // Runs on EVERY client (whoever notices first ends the match) and is safe to repeat:
+  //  * ends when <= 1 player is alive (0 = same-tick deaths -> longest survivor wins),
+  //  * also finishes a match whose result was already written but whose status never flipped to "ended"
+  //    (the client that wrote it crashed / lost connection half-way),
+  //  * the "already tried" latch is only held while a write is in flight; a failed write releases it and retries.
   useEffect(() => {
-    if (!room || room.status !== "playing" || endedWriteRef.current) return
-    const players = Object.values(room.players ?? {})
-    const alive = players.filter((p) => p.alive)
-    if (alive.length > 1) return
+    if (!room || room.status !== "playing") return
+    const all = Object.values(room.players ?? {})
+    if (all.length === 0) return
+    const resultAlreadyWritten = room.game?.endedAt != null
+    if (!resultAlreadyWritten && all.filter((p) => p.alive).length > 1) return
+    if (endedWriteRef.current && Date.now() - endAttemptAtRef.current < 1500) return
     endedWriteRef.current = true
-    // nobody left alive (same-tick deaths): the one who lasted longest wins
-    const winnerId =
-      alive[0]?.id ?? [...players].sort((a, b) => (b.diedAt ?? 0) - (a.diedAt ?? 0) || (b.kills ?? 0) - (a.kills ?? 0))[0]?.id ?? null
-    // v19.0.1 audit fix: first-writer-wins transaction. Har client apna winner
-    // compute karta hai aur same-tick deaths par ye alag ho sakta hai —
-    // plain update (last-write-wins) galat player ko jita deta. Pehla committed
-    // writer jeetta hai, baaki abort hote hain.
-    void (async () => {
-      try {
-        const res = await runTransaction(ref(getFirebaseDb(), `rooms/${code}/game`), (g) => {
-          const cur = (g ?? {}) as Record<string, unknown>
-          if (cur["status"] === "ended" || cur["winner"] != null) return // koi pehle end kar chuka — abort
-          return { ...cur, status: "ended", winner: winnerId, endedAt: serverNow() }
-        })
-        if (res.committed) {
-          await update(ref(getFirebaseDb(), `rooms/${code}`), { status: "ended" }).catch(() => {})
-        }
-      } catch {
-        /* best-effort: doosra client end kar dega */
-      }
-    })()
+    endAttemptAtRef.current = Date.now()
+    finishBattleRoyale(code, room.game?.winner ?? pickRoyaleWinner(all), serverNow()).catch(() => {
+      endedWriteRef.current = false
+      setTimeout(() => setEndRetry((n) => n + 1), 1500)
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [room])
+  }, [room, endRetry])
 
+  // match over: the fanfare plays for everyone watching the result (winner AND spectators)
   useEffect(() => {
-    if (room?.status === "ended" && room.game?.winner === playerId && aliveRef.current) soundRef.current.playGameStartSound()
+    if (room?.status === "ended") soundRef.current.playGameStartSound()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room?.status])
+
+  // ---- zone audio: warning beeps 5 s before a shrink, rumble when it starts (alive players AND spectators) ----
+  useEffect(() => {
+    const z = hud.state
+    const p = prevZoneSndRef.current
+    if (phase === "playing") {
+      if (z.warning && !p.warning) soundRef.current.playZoneWarningSound()
+      if (z.shrinking && !p.shrinking) soundRef.current.playZoneShrinkSound()
+    }
+    prevZoneSndRef.current = { warning: z.warning, shrinking: z.shrinking }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hud.state.warning, hud.state.shrinking, phase])
 
   // ---- spectator: who does the camera follow? ------------------------------------------
   const survivors = () =>
@@ -580,16 +634,28 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
     }
   }
 
+  // "Back to room" — available to EVERYONE on the result screen (winner, spectators, guests).
+  //  * host (or nobody is host any more): reset the room -> status "lobby" -> every client's room subscription
+  //    sends its player back to the lobby, including players who are still on the victory screen.
+  //  * everyone else: step back into the room view right now; the lobby waits there for the host's next round.
+  const hostGone = !!room && !room.players?.[room.hostId]
   const handleBackToRoom = async () => {
-    if (!isHost || endBusy) return
-    setEndBusy(true)
-    setEndError("")
-    try {
-      await resetRoomForRematch(code)
-    } catch {
-      setEndError("Could not go back to the room.")
-      setEndBusy(false)
+    if (endBusy) return
+    if (isHost || hostGone) {
+      setEndBusy(true)
+      setEndError("")
+      try {
+        if (!isHost) await claimHost(code, playerId) // the old host's tab died: take over so the room can be reset
+        await resetRoomForRematch(code)
+      } catch {
+        setEndError("Could not go back to the room.")
+        setEndBusy(false)
+      }
+      return
     }
+    if (loopRef.current) clearInterval(loopRef.current)
+    if (tickerRef.current) clearInterval(tickerRef.current)
+    ;(onReturnToRoomRef.current ?? onBackToLobbyRef.current)()
   }
 
   // ---- derived UI ------------------------------------------------------------------------------
@@ -647,18 +713,13 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
 
           <CountdownOverlay value={phase === "countdown" ? countdownNum : 0} label="BATTLE ROYALE" sub={`${total} players`} />
 
-          {phase === "ended" && room?.game?.zone && (
+          {phase === "ended" && (
             <RoyaleVictory
               players={players}
-              winnerId={room.game.winner ?? null}
+              winnerId={room?.game?.winner ?? pickRoyaleWinner(players)}
               myId={playerId}
-              startAt={room.game.zone.startAt}
-              endedAt={room.game.endedAt ?? room.game.zone.startAt}
-              isHost={isHost}
-              busy={endBusy}
-              error={endError}
-              onRematch={handleRematch}
-              onBackToRoom={handleBackToRoom}
+              startAt={room?.game?.zone?.startAt ?? room?.game?.endedAt ?? serverNow()}
+              endedAt={room?.game?.endedAt ?? serverNow()}
             />
           )}
         </div>,
@@ -717,7 +778,32 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
               </div>
             </div>
           )}
-          {!steering && <div className="flex-1" />}
+          {phase === "ended" ? (
+            <div className="flex flex-1 flex-col justify-center gap-1.5">
+              <button
+                onClick={handleBackToRoom}
+                disabled={endBusy}
+                aria-label="Back to room"
+                className="d-pad-btn h-11 w-full rounded-xl flex items-center justify-center gap-2 text-white text-sm font-bold bg-gradient-to-r from-emerald-500 to-emerald-400 shadow-md shadow-emerald-500/30 active:scale-95 transition-transform disabled:opacity-50"
+              >
+                {endBusy && !isHost ? <Loader2 className="h-5 w-5 animate-spin" /> : <Home className="h-5 w-5" />} Back to room
+              </button>
+              {isHost && (
+                <button
+                  onClick={handleRematch}
+                  disabled={endBusy}
+                  aria-label="Rematch"
+                  className="d-pad-btn h-10 w-full rounded-xl flex items-center justify-center gap-2 text-sm font-bold bg-white/70 dark:bg-white/10 border border-black/10 dark:border-white/15 active:scale-95 transition-transform disabled:opacity-50"
+                >
+                  {endBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Rematch
+                </button>
+              )}
+              {!isHost && <div className="text-center text-[10px] opacity-60">The host picks the next round</div>}
+              {endError && <div className="text-center text-[10px] text-red-500">{endError}</div>}
+            </div>
+          ) : (
+            !steering && <div className="flex-1" />
+          )}
         </>,
         sideEl,
       )}
