@@ -6,6 +6,8 @@ import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Pause, Play, X, Settings, Tr
 // Import the sound manager at the top of the file
 import { useSoundManager } from "./sound-manager"
 import { useClickSound } from "@/hooks/use-click-sound"
+import { antiGhostProps } from "@/lib/anti-ghost"
+import { setButtonSoundConfig } from "@/lib/button-sound"
 import { useClickHaptic } from "@/hooks/use-click-haptic"
 import { loadClickSound, saveClickSound } from "@/lib/click-sound"
 import MultiplayerLobby, { NO_LOBBY_ROOM, type LobbyActions, type LobbyRoomInfo } from "./multiplayer-lobby"
@@ -633,11 +635,13 @@ export default function SnakeGame() {
     enabled: soundEnabled,
     volume,
   })
-  // Click sound on every button / tap in the whole app. Own switch in Settings; also needs the game Sound on, and follows the volume
+  // Click sound on every button / tap in the whole app. Own switch in Settings; NOT affected by the mute icon, follows the volume bar
   const [clickSound, setClickSound] = useState(true)
   useEffect(() => setClickSound(loadClickSound()), [])
   useEffect(() => saveClickSound(clickSound), [clickSound])
-  useClickSound({ enabled: soundEnabled && clickSound, volume })
+  useClickSound({ enabled: clickSound, volume })
+  // D-pad button tick sound uses the same switch + volume (mute icon does not affect it)
+  useEffect(() => setButtonSoundConfig(clickSound, volume), [clickSound, volume])
   // Short vibration on every button press (follows the Settings "Vibration" switch)
   useClickHaptic({ enabled: hapticEnabled })
 
@@ -1569,28 +1573,23 @@ export default function SnakeGame() {
     // Add haptic feedback for button press
     triggerHaptic(15)
 
-    // Prevent 180-degree turns
+    // Anti-ghosting: judge the press against the LAST QUEUED direction (not only the committed one), so quick combos
+    // like UP then LEFT while moving RIGHT are both kept; same-direction repeats and 180-degree turns are skipped.
+    const q = directionQueueRef.current
+    const tail = q.length > 0 ? q[q.length - 1] : lastDirectionRef.current
+    if (newDirection === tail) return
     if (
-      (newDirection === DIRECTIONS.UP && lastDirectionRef.current === DIRECTIONS.DOWN) ||
-      (newDirection === DIRECTIONS.DOWN && lastDirectionRef.current === DIRECTIONS.UP) ||
-      (newDirection === DIRECTIONS.LEFT && lastDirectionRef.current === DIRECTIONS.RIGHT) ||
-      (newDirection === DIRECTIONS.RIGHT && lastDirectionRef.current === DIRECTIONS.LEFT)
+      (newDirection === DIRECTIONS.UP && tail === DIRECTIONS.DOWN) ||
+      (newDirection === DIRECTIONS.DOWN && tail === DIRECTIONS.UP) ||
+      (newDirection === DIRECTIONS.LEFT && tail === DIRECTIONS.RIGHT) ||
+      (newDirection === DIRECTIONS.RIGHT && tail === DIRECTIONS.LEFT)
     ) {
       return
     }
 
-    // Add to queue if not already the last item
-    if (
-      directionQueueRef.current.length === 0 ||
-      directionQueueRef.current[directionQueueRef.current.length - 1] !== newDirection
-    ) {
-      directionQueueRef.current.push(newDirection)
-
-      // Limit queue size
-      if (directionQueueRef.current.length > 3) {
-        directionQueueRef.current = directionQueueRef.current.slice(-3)
-      }
-    }
+    q.push(newDirection)
+    // keep the last 4 presses
+    if (q.length > 4) directionQueueRef.current = q.slice(-4)
   }
 
   // Draw game
@@ -2025,7 +2024,7 @@ export default function SnakeGame() {
   const inBattle = isMultiplayerActive
   const startLabel = gameOver && !swipedAfterGameOver ? "Play Again" : "Start Game"
   const glassBox = "bg-white/70 dark:bg-white/5 border border-black/5 dark:border-white/10"
-  const dpadBtn = `${glassBox} d-pad-btn w-full h-full min-h-[48px] min-w-[48px] rounded-2xl flex items-center justify-center active:scale-95 transition-transform`
+  const dpadBtn = `${glassBox} d-pad-btn anti-ghost w-full h-full min-h-[48px] min-w-[48px] rounded-2xl flex items-center justify-center active:scale-95 transition-transform`
   const optBtn = (label: string, icon: React.ReactNode, onClick: () => void, variant: "on" | "off" | "gold" | "green" = "off") => (
     <button
       key={label}
@@ -2177,10 +2176,10 @@ export default function SnakeGame() {
               {controlMode !== "swipe" && (
                 <div className="flex-1 min-h-0 min-w-0 flex items-center justify-center" style={{ containerType: "size" }}>
                   <div className="grid gap-1.5" style={{ width: "min(100cqw, 100cqh)", aspectRatio: "1 / 1", gridTemplateColumns: "repeat(3, 1fr)", gridTemplateRows: "repeat(3, 1fr)" }}>
-                    <div style={{ gridColumn: 2, gridRow: 1 }}><button aria-label="Up" onClick={() => handleDirectionClick(DIRECTIONS.UP)} className={dpadBtn}><ArrowUp className="h-6 w-6" /></button></div>
-                    <div style={{ gridColumn: 1, gridRow: 2 }}><button aria-label="Left" onClick={() => handleDirectionClick(DIRECTIONS.LEFT)} className={dpadBtn}><ArrowLeft className="h-6 w-6" /></button></div>
-                    <div style={{ gridColumn: 3, gridRow: 2 }}><button aria-label="Right" onClick={() => handleDirectionClick(DIRECTIONS.RIGHT)} className={dpadBtn}><ArrowRight className="h-6 w-6" /></button></div>
-                    <div style={{ gridColumn: 2, gridRow: 3 }}><button aria-label="Down" onClick={() => handleDirectionClick(DIRECTIONS.DOWN)} className={dpadBtn}><ArrowDown className="h-6 w-6" /></button></div>
+                    <div style={{ gridColumn: 2, gridRow: 1 }}><button aria-label="Up" {...antiGhostProps(() => handleDirectionClick(DIRECTIONS.UP))} className={dpadBtn}><ArrowUp className="h-6 w-6" /></button></div>
+                    <div style={{ gridColumn: 1, gridRow: 2 }}><button aria-label="Left" {...antiGhostProps(() => handleDirectionClick(DIRECTIONS.LEFT))} className={dpadBtn}><ArrowLeft className="h-6 w-6" /></button></div>
+                    <div style={{ gridColumn: 3, gridRow: 2 }}><button aria-label="Right" {...antiGhostProps(() => handleDirectionClick(DIRECTIONS.RIGHT))} className={dpadBtn}><ArrowRight className="h-6 w-6" /></button></div>
+                    <div style={{ gridColumn: 2, gridRow: 3 }}><button aria-label="Down" {...antiGhostProps(() => handleDirectionClick(DIRECTIONS.DOWN))} className={dpadBtn}><ArrowDown className="h-6 w-6" /></button></div>
                   </div>
                 </div>
               )}
@@ -2331,7 +2330,7 @@ export default function SnakeGame() {
           setClickSound={(v) => {
             setClickSound(v)
             // turning it ON: play one click as a preview (the global listener is still off at this exact tap)
-            if (v && soundEnabled && volume > 0) { const a = new Audio("/sounds/click.mp3"); a.volume = volume; a.play().catch(() => {}) }
+            if (v && volume > 0) { const a = new Audio("/sounds/click.mp3"); a.volume = volume; a.play().catch(() => {}) }
           }}
           onClose={() => setActiveView("GAME")}
         />

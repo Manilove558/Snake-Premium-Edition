@@ -157,11 +157,12 @@ export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume
         <div className="flex flex-col gap-2">
           <div className={label}>SOUND</div>
           <div className={`${box} min-h-[48px] px-3 py-1 flex items-center gap-2`}>
-            {volume === 0 || !soundEnabled ? <VolumeX className="h-5 w-5 shrink-0 text-muted-foreground" /> : <Volume2 className="h-5 w-5 shrink-0 text-muted-foreground" />}
+            <button type="button" onClick={() => setSoundEnabled(!soundEnabled)} aria-pressed={!soundEnabled} aria-label={soundEnabled ? "Mute sound" : "Unmute sound"} className="d-pad-btn h-12 w-12 shrink-0 flex items-center justify-center text-muted-foreground">
+              {volume === 0 || !soundEnabled ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+            </button>
             <input type="range" min={0} max={100} value={Math.round(volume * 100)} onChange={(e) => setVolume(Number(e.target.value) / 100)} aria-label="Game volume" className="flex-1 h-12 accent-emerald-500 cursor-pointer" />
             <span className="w-9 text-right text-xs tabular-nums opacity-60">{Math.round(volume * 100)}%</span>
           </div>
-          <Row title="Sound" hint="Game sounds on / off" on={soundEnabled} onToggle={() => setSoundEnabled(!soundEnabled)} icon={soundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />} />
         </div>
         {/* Theme + vibration */}
         <div className="flex flex-col gap-2">

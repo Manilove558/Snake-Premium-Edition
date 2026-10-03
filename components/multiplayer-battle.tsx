@@ -47,6 +47,7 @@ import {
 } from "@/lib/ranked"
 import { armDisconnectPenalty, fetchRankedRecords, isGoogleUser, writeRankedUpdates, type RankedWrite } from "@/lib/ranked-db"
 import { VipCrown } from "./vip-crown"
+import { antiGhostProps } from "@/lib/anti-ghost"
 
 const CELL = 18 // battle arena render size (bigger on phones)
 const BW = 20
@@ -133,6 +134,8 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   const snakeRef = useRef<Seg[]>([])
   const dirRef = useRef({ x: 1, y: 0 })
   const pendingDirRef = useRef({ x: 1, y: 0 })
+  // Anti-ghosting: button presses made between two ticks are queued (max 4) instead of overwriting each other
+  const dirQueueRef = useRef<{ x: number; y: number }[]>([])
   const growthRef = useRef(0)
   const aliveRef = useRef(true)
   const phaseRef = useRef("lobby")
@@ -263,6 +266,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
     const s = BATTLE_SPAWNS[idx % BATTLE_SPAWNS.length]
     dirRef.current = { x: s.dx, y: s.dy }
     pendingDirRef.current = { x: s.dx, y: s.dy }
+    dirQueueRef.current = []
     const snake: Seg[] = []
     for (let i = 0; i < 3; i++) snake.push({ x: s.x - s.dx * i, y: s.y - s.dy * i })
     snakeRef.current = snake
@@ -345,6 +349,8 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   const doTick = () => {
     if (!aliveRef.current || phaseRef.current !== "playing") return
     const d = dirRef.current
+    // a queued button press (oldest first) wins over the single pending slot
+    if (dirQueueRef.current.length > 0) pendingDirRef.current = dirQueueRef.current.shift()!
     const pd = pendingDirRef.current
     if (pd.x !== -d.x || pd.y !== -d.y) dirRef.current = { ...pd }
     const dir = dirRef.current
@@ -593,7 +599,16 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
 
   // --- controls -----------------------------------------------------------------
   const setDir = (x: number, y: number) => {
+    dirQueueRef.current = []
     pendingDirRef.current = { x, y }
+  }
+  const queueDir = (x: number, y: number) => {
+    const q = dirQueueRef.current
+    const tail = q.length > 0 ? q[q.length - 1] : pendingDirRef.current
+    if (tail.x === x && tail.y === y) return // same direction again
+    if (tail.x === -x && tail.y === -y) return // 180-degree turn
+    q.push({ x, y })
+    if (q.length > 4) dirQueueRef.current = q.slice(-4)
   }
 
   useEffect(() => {
@@ -861,7 +876,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
         : `${nm(k.victimId, k.victimName)} crashed into themselves`
 
   const glassBox = "bg-white/70 dark:bg-white/5 border border-black/5 dark:border-white/10"
-  const dpadBtn = `${glassBox} d-pad-btn w-full h-full min-h-[48px] min-w-[48px] rounded-2xl flex items-center justify-center active:scale-95 transition-transform`
+  const dpadBtn = `${glassBox} d-pad-btn anti-ghost w-full h-full min-h-[48px] min-w-[48px] rounded-2xl flex items-center justify-center active:scale-95 transition-transform`
   const steering = phase === "countdown" || (phase === "playing" && aliveRef.current)
   const myScore = myPlayer?.score ?? 0
 
@@ -1027,10 +1042,10 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
           {steering && controlMode !== "swipe" && (
             <div className="flex-1 min-h-[110px] min-w-0 flex items-center justify-center" style={{ containerType: "size" }}>
               <div className="grid gap-1.5" style={{ width: "min(100cqw, 100cqh)", aspectRatio: "1 / 1", gridTemplateColumns: "repeat(3, 1fr)", gridTemplateRows: "repeat(3, 1fr)" }}>
-                <div style={{ gridColumn: 2, gridRow: 1 }}><button aria-label="Up" onTouchStart={() => setDir(0, -1)} onClick={() => setDir(0, -1)} className={dpadBtn}><ArrowUp className="h-6 w-6" /></button></div>
-                <div style={{ gridColumn: 1, gridRow: 2 }}><button aria-label="Left" onTouchStart={() => setDir(-1, 0)} onClick={() => setDir(-1, 0)} className={dpadBtn}><ArrowLeft className="h-6 w-6" /></button></div>
-                <div style={{ gridColumn: 3, gridRow: 2 }}><button aria-label="Right" onTouchStart={() => setDir(1, 0)} onClick={() => setDir(1, 0)} className={dpadBtn}><ArrowRight className="h-6 w-6" /></button></div>
-                <div style={{ gridColumn: 2, gridRow: 3 }}><button aria-label="Down" onTouchStart={() => setDir(0, 1)} onClick={() => setDir(0, 1)} className={dpadBtn}><ArrowDown className="h-6 w-6" /></button></div>
+                <div style={{ gridColumn: 2, gridRow: 1 }}><button aria-label="Up" {...antiGhostProps(() => queueDir(0, -1))} className={dpadBtn}><ArrowUp className="h-6 w-6" /></button></div>
+                <div style={{ gridColumn: 1, gridRow: 2 }}><button aria-label="Left" {...antiGhostProps(() => queueDir(-1, 0))} className={dpadBtn}><ArrowLeft className="h-6 w-6" /></button></div>
+                <div style={{ gridColumn: 3, gridRow: 2 }}><button aria-label="Right" {...antiGhostProps(() => queueDir(1, 0))} className={dpadBtn}><ArrowRight className="h-6 w-6" /></button></div>
+                <div style={{ gridColumn: 2, gridRow: 3 }}><button aria-label="Down" {...antiGhostProps(() => queueDir(0, 1))} className={dpadBtn}><ArrowDown className="h-6 w-6" /></button></div>
               </div>
             </div>
           )}
