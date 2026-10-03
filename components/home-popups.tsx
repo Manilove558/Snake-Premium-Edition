@@ -1,7 +1,8 @@
 "use client"
 import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useBackButton } from "@/hooks/use-back-button"
 import { createPortal } from "react-dom"
-import { X, Volume2, VolumeX, Trophy, Globe, Users, Moon, Sun, Gamepad2, Move, Vibrate, VibrateOff, ChevronLeft, ChevronRight, Smartphone } from "lucide-react"
+import { X, Volume2, VolumeX, Trophy, Globe, Users, Moon, Sun, Gamepad2, Move, Vibrate, VibrateOff, ChevronLeft, ChevronRight } from "lucide-react"
 import { fetchLeaderboard, type LeaderboardRow } from "@/lib/ranked-db"
 import { getTier } from "@/lib/ranked"
 import { openPlayerProfile, useFriends } from "@/lib/friends"
@@ -15,13 +16,8 @@ const box = "rounded-2xl border border-black/5 dark:border-white/10 bg-white/70 
 /** Centered popup that fits any landscape screen: safe-area padding, scrolls inside when short, 48dp close button, Android Back closes it. */
 export function PopupShell({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   const panelTarget = usePanelTarget()
-  useEffect(() => {
-    history.pushState({ popup: 1 }, "")
-    const onPop = () => onClose()
-    window.addEventListener("popstate", onPop)
-    return () => window.removeEventListener("popstate", onPop)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-  const close = () => { if (history.state?.popup) history.back(); else onClose() }
+  useBackButton(true, () => onClose())
+  const close = () => onClose()
   return createPortal(
     <div
       className="absolute inset-0 z-[10] flex items-center justify-center bg-black/55 backdrop-blur-sm p-2"
@@ -138,15 +134,13 @@ type SettingsProps = {
   hapticEnabled: boolean; setHapticEnabled: (v: boolean) => void; hapticSupported: boolean
   /** Battle-Royale-style gliding movement (single-player, classic battle and Battle Royale) */
   smoothMove: boolean; setSmoothMove: (v: boolean) => void
-  /** true = keep the UI clear of the camera notch / rounded corners; false = full screen, edge-to-edge */
-  notchSafe: boolean; setNotchSafe: (v: boolean) => void
   /** sound on every button press (separate from the game-sounds toggle) */
   clickSound: boolean; setClickSound: (v: boolean) => void
   /** the click sound's OWN volume 0..1 (press the "Click sound" row and swipe left / right) */
   clickVolume: number; setClickVolume: (v: number) => void
   onClose: () => void
 }
-export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume, darkMode, setDarkMode, controlMode, setControlMode, hapticEnabled, setHapticEnabled, hapticSupported, smoothMove, setSmoothMove, notchSafe, setNotchSafe, clickSound, setClickSound, clickVolume, setClickVolume, onClose }: SettingsProps) {
+export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume, darkMode, setDarkMode, controlMode, setControlMode, hapticEnabled, setHapticEnabled, hapticSupported, smoothMove, setSmoothMove, clickSound, setClickSound, clickVolume, setClickVolume, onClose }: SettingsProps) {
   const label = "text-[10px] tracking-[.2em] font-bold opacity-50 px-1"
   const seg = (v: "buttons" | "swipe", text: string, icon: ReactNode) => (
     <button key={v} onClick={() => setControlMode(v)} aria-pressed={controlMode === v}
@@ -191,9 +185,6 @@ export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume
       {/* Movement style */}
       <div className={label}>MOVEMENT</div>
       <Row title="Smooth movement" hint={smoothMove ? "Battle Royale style: the snake glides" : "Off: classic cell-by-cell steps"} on={smoothMove} onToggle={() => setSmoothMove(!smoothMove)} icon={<Move className="h-5 w-5" />} />
-      {/* Display */}
-      <div className={label}>DISPLAY</div>
-      <Row title="Notch Display / Safe Area Cutout" hint={notchSafe ? "On: the UI stays clear of the notch and rounded corners" : "Off: full screen, edge-to-edge (the UI may sit under the notch)"} on={notchSafe} onToggle={() => setNotchSafe(!notchSafe)} icon={<Smartphone className="h-5 w-5" />} />
     </PopupShell>
   )
 }

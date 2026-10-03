@@ -11,6 +11,8 @@
 //   * transactional food claims, interpolated rendering (60 fps) over 6-7 Hz grid ticks
 //   * camera window + minimap, shrinking zone with 3 s grace, spectator mode, victory stats
 import { useEffect, useRef, useState } from "react"
+import { useBackButton } from "@/hooks/use-back-button"
+import { ConfirmDialog } from "./confirm-dialog"
 import { createPortal } from "react-dom"
 import { X, Skull, Crown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, RotateCcw, Loader2 } from "lucide-react"
 import { ref, set, update, remove, onValue, push, increment, onDisconnect, serverTimestamp } from "firebase/database"
@@ -685,10 +687,22 @@ export default function RoyaleBattle({ code, playerId, darkMode, controlMode, so
           ? `${nm(k.victimId, k.victimName)} hit the wall`
           : `${nm(k.victimId, k.victimName)} crashed into themselves`
 
+
+  // Android Back: ask before leaving a live battle (nothing to lose on the end screen)
+  const [confirmLeave, setConfirmLeave] = useState(false)
+  useBackButton(true, () => { if (phase === "ended") void handleExit(); else setConfirmLeave(true) })
   if (!centerEl || !sideEl || !leftEl) return null
 
   return (
     <>
+      <ConfirmDialog
+        open={confirmLeave}
+        title="Leave battle?"
+        message="You will leave the room and lose your place in this match."
+        confirmLabel="Leave"
+        onCancel={() => setConfirmLeave(false)}
+        onConfirm={() => { setConfirmLeave(false); void handleExit() }}
+      />
       {/* CENTER: fixed-size canvas; the camera window + minimap are drawn inside it */}
       {createPortal(
         <div

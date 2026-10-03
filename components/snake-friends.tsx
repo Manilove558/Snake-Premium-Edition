@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState } from "react"
+import { useBackButton } from "@/hooks/use-back-button"
 import { createPortal } from "react-dom"
 import { usePanelState, usePanelTarget } from "./panel-host"
 import {
@@ -137,24 +138,15 @@ export function SnakeFriends() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Android back button closes the sheet
-  useEffect(() => {
-    if (!open) return
-    history.pushState({ friends: 1 }, "")
-    const onPop = () => {
-      setOpen(false)
-      setView(null)
-    }
-    window.addEventListener("popstate", onPop)
-    return () => window.removeEventListener("popstate", onPop)
-  }, [open])
+  // Android back button closes the sheet (central back stack)
+  useBackButton(open, () => {
+    setOpen(false)
+    setView(null)
+  })
 
   const close = () => {
-    if (history.state?.friends) history.back()
-    else {
-      setOpen(false)
-      setView(null)
-    }
+    setOpen(false)
+    setView(null)
     setSearchErr("")
     setActErr("")
   }
@@ -495,7 +487,7 @@ export function SnakeFriends() {
             <div
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-md max-h-full overflow-y-auto rounded-3xl bg-[#f1f4f1] dark:bg-[#0b0f14] border border-black/5 dark:border-white/10 p-5 shadow-2xl animate-fade-in text-[#123321] dark:text-white"
-              style={{ paddingBottom: "max(24px, var(--sai-bottom))" }}
+              style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))" }}
             >
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xl font-bold text-emerald-500">Friends</h3>

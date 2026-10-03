@@ -1,6 +1,8 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { useBackButton } from "@/hooks/use-back-button"
+import { ConfirmDialog } from "./confirm-dialog"
 import { createPortal } from "react-dom"
 import { Button } from "@/components/ui/button"
 import { X, Trophy, Skull, Crown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, RotateCcw, Loader2 } from "lucide-react"
@@ -951,10 +953,22 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   const aliveInMatch = (phase === "countdown" || phase === "playing") && myPlayer?.alive !== false && aliveRef.current
   const xBackToRoom = aliveInMatch || (phase === "ended" && isHost)
   const xAction = aliveInMatch ? handleReturnToRoom : phase === "ended" && isHost ? handleBackToRoom : handleExit
+
+  // Android Back: on the end screen it behaves like the red ✕; mid-match it asks first so one stray swipe can't forfeit the round
+  const [confirmLeave, setConfirmLeave] = useState(false)
+  useBackButton(true, () => { if (phase === "ended") void xAction(); else setConfirmLeave(true) })
   if (!centerEl || !sideEl || !leftEl) return null
 
   return (
     <>
+      <ConfirmDialog
+        open={confirmLeave}
+        title={aliveInMatch ? "Leave this round?" : "Leave battle?"}
+        message={aliveInMatch ? "You go back to the room and your snake is out of this round." : "You will leave the battle."}
+        confirmLabel={aliveInMatch ? "Back to room" : "Leave"}
+        onCancel={() => setConfirmLeave(false)}
+        onConfirm={() => { setConfirmLeave(false); void xAction() }}
+      />
       {/* CENTER: the classic board frame, the battle is drawn on it */}
       {createPortal(
         <div

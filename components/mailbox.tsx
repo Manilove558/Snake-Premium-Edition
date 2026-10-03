@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState } from "react"
+import { useBackButton } from "@/hooks/use-back-button"
 import { createPortal } from "react-dom"
 import { usePanelState, usePanelTarget } from "./panel-host"
 import { Bell, Check, Coins, Crown, Gem, Gift, Inbox, Megaphone, X } from "lucide-react"
@@ -49,6 +50,7 @@ export function MailboxButton() {
 }
 
 function MailboxSheet({ uid, items, claimable, onClose }: { uid: string; items: MailItem[]; claimable: number; onClose: () => void }) {
+  useBackButton(true, () => onClose())
   const [msg, setMsg] = useState("")
   const [busy, setBusy] = useState<string | null>(null)
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 3000) }
@@ -77,7 +79,7 @@ function MailboxSheet({ uid, items, claimable, onClose }: { uid: string; items: 
       <div
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-md max-h-full flex flex-col rounded-3xl bg-[#f1f4f1] dark:bg-[#0b0f14] border border-black/5 dark:border-white/10 p-5 shadow-2xl animate-fade-in text-[#123321] dark:text-white"
-        style={{ paddingBottom: "max(20px, var(--sai-bottom))" }}
+        style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }}
       >
         <div className="flex items-center justify-between mb-3 shrink-0">
           <div className="flex items-center gap-2">

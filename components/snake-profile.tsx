@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState } from "react"
+import { useBackButton } from "@/hooks/use-back-button"
 import { createPortal } from "react-dom"
 import { usePanelState, usePanelTarget } from "./panel-host"
 import { User as UserIcon, X, LogOut, Cloud, CloudOff, Loader2, Copy, Check, Pencil } from "lucide-react"
@@ -46,15 +47,9 @@ export function SnakeProfile() {
     return subscribeMyRanked(uid, setRank)
   }, [uid])
 
-  // Android back button closes the sheet
-  useEffect(() => {
-    if (!open) return
-    history.pushState({ profile: 1 }, "")
-    const onPop = () => setOpen(false)
-    window.addEventListener("popstate", onPop)
-    return () => window.removeEventListener("popstate", onPop)
-  }, [open])
-  const close = () => { if (history.state?.profile) history.back(); else setOpen(false); setConfirmOut(false); setErr(""); setEditing(false); setNameErr("") }
+  // Android back button closes the sheet (central back stack)
+  useBackButton(open, () => { setOpen(false); setConfirmOut(false); setEditing(false) })
+  const close = () => { setOpen(false); setConfirmOut(false); setErr(""); setEditing(false); setNameErr("") }
 
   const startEdit = () => { setDraft(shownName); setNameErr(""); setNameOk(""); setEditing(true) }
   const cancelEdit = () => { setEditing(false); setNameErr("") }
@@ -92,7 +87,7 @@ export function SnakeProfile() {
       {open && createPortal(
         <div className="absolute inset-0 z-[10] flex items-center justify-center overflow-y-auto backdrop-blur-md bg-black/30 dark:bg-black/55" onClick={close}>
           <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md max-h-full overflow-y-auto rounded-3xl bg-[#f1f4f1] dark:bg-[#0b0f14] border border-black/5 dark:border-white/10 p-4 shadow-2xl animate-fade-in text-[#123321] dark:text-white"
-            style={{ paddingBottom: "max(24px, var(--sai-bottom))" }}>
+            style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))" }}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xl font-bold text-emerald-500">Profile</h3>
               <button aria-label="Close" onClick={close} className={`panel-inner-close d-pad-btn h-12 w-12 rounded-full flex items-center justify-center ${glass}`}><X className="h-4 w-4" /></button>

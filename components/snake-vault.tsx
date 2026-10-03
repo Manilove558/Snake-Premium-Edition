@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useMemo, useState } from "react"
+import { useBackButton } from "@/hooks/use-back-button"
 import { createPortal } from "react-dom"
 import { usePanelState, usePanelTarget } from "./panel-host"
 import { Vault, ChevronLeft, Check, Lock, Crown } from "lucide-react"
@@ -38,17 +39,15 @@ export function SnakeVault() {
   const dark = useMemo(() => open && document.documentElement.classList.contains("dark"), [open])
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 1800) }
 
-  // Android hardware/gesture Back closes the vault instead of leaving the app
+  // Android hardware/gesture Back closes the vault (central back stack)
+  useBackButton(open, () => setOpen(false))
   useEffect(() => {
     if (!open) return
-    history.pushState({ vault: 1 }, "")
-    const onPop = () => setOpen(false)
-    window.addEventListener("popstate", onPop)
     const prev = document.body.style.overflow
     document.body.style.overflow = "hidden"
-    return () => { window.removeEventListener("popstate", onPop); document.body.style.overflow = prev }
+    return () => { document.body.style.overflow = prev }
   }, [open])
-  const close = () => { if (history.state?.vault) history.back(); else setOpen(false) }
+  const close = () => setOpen(false)
 
   const mine = (k: Slot): StoreItem[] => catalog.filter((i) => i.kind === k && owns(st, i.id))
   const list = mine(tab).sort((a, b) => Number(st.equipped[tab] === b.id) - Number(st.equipped[tab] === a.id))
@@ -61,7 +60,7 @@ export function SnakeVault() {
       </button>
       {open && createPortal(
         <div className="absolute inset-0 z-[10] overflow-y-auto overscroll-contain backdrop-blur-md bg-black/25 dark:bg-black/50 text-[#123321] dark:text-white"
-          style={{ paddingTop: "max(12px, var(--sai-top))", paddingBottom: "max(12px, var(--sai-bottom))" }}>
+          style={{ paddingTop: "max(12px, env(safe-area-inset-top))", paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
           <div className="relative mx-2 sm:mx-auto max-w-xl min-h-[calc(100%-0px)] rounded-3xl px-3.5 pt-3 pb-6 animate-fade-in shadow-2xl border border-white/40 dark:border-white/10 bg-[#f1f4f1]/95 dark:bg-[#0b0f14]/95">
             <div className="flex items-center justify-between">
               <div className="flex items-baseline gap-2">
@@ -128,7 +127,7 @@ export function SnakeVault() {
               </div>
             )}
           </div>
-          {msg && <div className="fixed z-[120] left-1/2 -translate-x-1/2 bottom-[max(24px,var(--sai-bottom))] rounded-full px-5 py-2.5 text-sm font-semibold text-white bg-emerald-500 shadow-lg shadow-emerald-500/40">{msg}</div>}
+          {msg && <div className="fixed z-[120] left-1/2 -translate-x-1/2 bottom-[max(24px,env(safe-area-inset-bottom))] rounded-full px-5 py-2.5 text-sm font-semibold text-white bg-emerald-500 shadow-lg shadow-emerald-500/40">{msg}</div>}
         </div>, panelTarget)}
     </>
   )

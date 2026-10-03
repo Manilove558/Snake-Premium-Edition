@@ -26,9 +26,11 @@ import BattleRouter from "./battle-router" // picks classic MultiplayerBattle or
 import { RankPopup, MapPopup, SettingsPopup } from "./home-popups"
 import SmoothSnakeLayer from "./smooth-snake-layer"
 import { loadSmoothMove, saveSmoothMove } from "@/lib/smooth-move"
-import { useNotchScreen } from "@/hooks/use-notch-screen"
 import { RotateHint } from "./rotate-hint"
 import { PanelHostContext, type ViewId } from "./panel-host"
+import { useBackButton } from "@/hooks/use-back-button"
+import { ConfirmDialog } from "./confirm-dialog"
+import { installBackGuard, setBackFallback, exitApplication } from "@/lib/back-stack"
 
 // Left strip on the home screen keeps room for future buttons. Set to false to hide the dashed placeholders.
 const SHOW_FUTURE_STRIP = true
@@ -629,8 +631,6 @@ export default function SnakeGame() {
   const [smoothMove, setSmoothMove] = useState(true)
   useEffect(() => setSmoothMove(loadSmoothMove()), [])
   useEffect(() => saveSmoothMove(smoothMove), [smoothMove])
-  // "Notch Display / Safe Area Cutout": applied to <html data-notch>, so the layout reacts instantly (see lib/notch.ts)
-  const { notchSafe, setNotchSafe } = useNotchScreen()
   // Random snake start position (head + direction), regenerated on every mode change
   const [snakeStart, setSnakeStart] = useState(() => getRandomSnakeStart([]))
   // Whether the canvas shows the mode preview (start screen, or game-over after a swipe)
@@ -1993,13 +1993,46 @@ export default function SnakeGame() {
   const shownView: ViewId = activeView === "GAME" && mpView === "lobby" ? "MULTIPLAYER" : activeView
   const panelCtx = { activeView: shownView, setActiveView, frame: frameEl }
   const openLobby = () => { triggerHaptic(15); setMpView("lobby"); setActiveView("MULTIPLAYER") }
-  // Frame close (x): use Android-back history entry when the panel pushed one, otherwise just switch view
+  // Frame close (x): panels are driven by activeView, so closing = back to the game view
   const closeFrame = () => {
     triggerHaptic(15)
-    const hs = typeof history !== "undefined" ? (history.state as Record<string, unknown> | null) : null
-    if (hs && (hs.store || hs.vault || hs.profile || hs.admin || hs.popup || hs.friends)) history.back()
-    else setActiveView("GAME")
+    setActiveView("GAME")
   }
+
+  // ---------------------------------------------------------------------------------------------
+  // Android hardware / gesture BACK  (see lib/back-stack.ts for the architecture)
+  // Layers, top -> bottom:  confirm dialogs > panels (Store, Settings, ...) > running match / lobby > home (exit prompt)
+  // Panels, battles and dialogs register their own handlers; the ones below belong to this component.
+  // ---------------------------------------------------------------------------------------------
+  const [showExitGame, setShowExitGame] = useState(false)
+  const [showLeaveMatch, setShowLeaveMatch] = useState(false)
+
+  // 1) platform guard: one sentinel history entry on web/PWA, Capacitor `backButton` listener on native
+  useEffect(() => {
+    let off: (() => void) | undefined
+    let disposed = false
+    installBackGuard().then((c) => { if (disposed) c(); else off = c })
+    return () => { disposed = true; off?.() }
+  }, [])
+
+  // 2) home screen: nobody above consumed Back -> "Exit Game?" prompt
+  useEffect(() => {
+    setBackFallback(() => { setShowExitGame(true); return true })
+    return () => setBackFallback(null)
+  }, [])
+
+  // 3) single-player match (countdown or running): pause the game and ask before leaving
+  const inSoloMatch = (gameStarted && !gameOver) || countdown > 0
+  useBackButton(inSoloMatch, () => {
+    if (!isPausedRef.current && countdown === 0) { isPausedRef.current = true; setIsPaused(true) } // freeze the game under the dialog
+    setShowLeaveMatch(true)
+  })
+
+  // 4) multiplayer lobby / room setup: Back leaves the room and returns to the main menu
+  useBackButton(mpView === "lobby", () => {
+    if (mpLobbyActionsRef.current) mpLobbyActionsRef.current.leave()
+    else { setMpView("none"); setMpSession(null); setActiveView("GAME") }
+  })
 
   // ---- Landscape layout (game is locked to landscape) ----
   const playing = gameStarted && !gameOver
@@ -2311,8 +2344,6 @@ export default function SnakeGame() {
           hapticSupported={!mounted || isVibrationSupported()}
           smoothMove={smoothMove}
           setSmoothMove={(v) => { triggerHaptic(15); setSmoothMove(v) }}
-          notchSafe={notchSafe}
-          setNotchSafe={(v) => { triggerHaptic(15); setNotchSafe(v) }}
           clickSound={clickSound}
           setClickSound={(v) => {
             setClickSound(v)
@@ -2372,6 +2403,25 @@ export default function SnakeGame() {
       )}
       {/* Room-invite notifications (signed-in players only) */}
       {user && <InvitePopup darkMode={darkMode} onAccept={handleInviteAccept} />}
+
+      {/* Back-button confirmations (each one also handles Back itself = Cancel) */}
+      <ConfirmDialog
+        open={showLeaveMatch}
+        title="Exit match?"
+        message="Your current game is paused. Leaving now loses this run's progress."
+        cancelLabel="Keep playing"
+        confirmLabel="Exit match"
+        onCancel={() => setShowLeaveMatch(false)}
+        onConfirm={() => { setShowLeaveMatch(false); exitGame() }}
+      />
+      <ConfirmDialog
+        open={showExitGame}
+        title="Exit Game?"
+        message="Are you sure you want to close Snake Premium?"
+        confirmLabel="Exit"
+        onCancel={() => setShowExitGame(false)}
+        onConfirm={() => { setShowExitGame(false); void exitApplication() }}
+      />
     </div>
     </PanelHostContext.Provider>
   )
