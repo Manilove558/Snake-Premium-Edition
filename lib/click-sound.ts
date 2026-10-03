@@ -18,3 +18,24 @@ export function saveClickSound(on: boolean): void {
     // storage unavailable — the choice just won't persist
   }
 }
+
+// Own volume of the click sound (0..1), separate from the game volume bar. Saved on this device.
+export const CLICK_VOLUME_KEY = "snake-click-volume"
+export const CLICK_VOLUME_DEFAULT = 0.8
+
+export function loadClickVolume(): number {
+  try {
+    const v = parseFloat(window.localStorage.getItem(CLICK_VOLUME_KEY) ?? "")
+    return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : CLICK_VOLUME_DEFAULT
+  } catch {
+    return CLICK_VOLUME_DEFAULT
+  }
+}
+
+export function saveClickVolume(v: number): void {
+  try {
+    window.localStorage.setItem(CLICK_VOLUME_KEY, String(v))
+  } catch {
+    // storage unavailable — the volume just won't persist
+  }
+}

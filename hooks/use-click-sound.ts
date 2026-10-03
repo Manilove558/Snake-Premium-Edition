@@ -4,7 +4,7 @@
 //
 //  * ONE global listener on `document` (capture phase), so it covers every screen: the game, store, vault, profile,
 //    settings, lobby, battle D-pads, dialogs / popups (portals), ...  No per-button code needed.
-//  * Follows the game's own Sound toggle and Volume slider (same as the other game sounds).
+//  * Follows the "Click sound" switch and its OWN volume (swipe on the Settings row); not the game volume bar or mute.
 //  * To keep a button silent give it (or a parent) the attribute  data-no-click-sound .
 import { useEffect, useRef } from "react"
 import { pressableOf } from "@/lib/pressable"

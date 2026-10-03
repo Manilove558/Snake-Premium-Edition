@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { X, Volume2, VolumeX, Trophy, Globe, Users, Moon, Sun, Gamepad2, Move, Vibrate, VibrateOff } from "lucide-react"
 import { fetchLeaderboard, type LeaderboardRow } from "@/lib/ranked-db"
@@ -140,9 +140,11 @@ type SettingsProps = {
   smoothMove: boolean; setSmoothMove: (v: boolean) => void
   /** sound on every button press (separate from the game-sounds toggle) */
   clickSound: boolean; setClickSound: (v: boolean) => void
+  /** the click sound's OWN volume 0..1 (press the "Click sound" row and swipe left / right) */
+  clickVolume: number; setClickVolume: (v: number) => void
   onClose: () => void
 }
-export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume, darkMode, setDarkMode, controlMode, setControlMode, hapticEnabled, setHapticEnabled, hapticSupported, smoothMove, setSmoothMove, clickSound, setClickSound, onClose }: SettingsProps) {
+export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume, darkMode, setDarkMode, controlMode, setControlMode, hapticEnabled, setHapticEnabled, hapticSupported, smoothMove, setSmoothMove, clickSound, setClickSound, clickVolume, setClickVolume, onClose }: SettingsProps) {
   const label = "text-[10px] tracking-[.2em] font-bold opacity-50 px-1"
   const seg = (v: "buttons" | "swipe", text: string, icon: ReactNode) => (
     <button key={v} onClick={() => setControlMode(v)} aria-pressed={controlMode === v}
@@ -175,7 +177,7 @@ export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume
               setHapticEnabled(v)
               if (v && hapticSupported) { try { navigator.vibrate(15) } catch {} }
             }} />
-          <Row title="Click sound" hint="Sound on every button press" on={clickSound} onToggle={() => setClickSound(!clickSound)} icon={clickSound ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />} />
+          <ClickSoundRow on={clickSound} onToggle={() => setClickSound(!clickSound)} volume={clickVolume} setVolume={setClickVolume} />
         </div>
       </div>
       {/* Controls */}
@@ -201,6 +203,72 @@ function Row({ title, hint, on, onToggle, disabled, icon }: { title: string; hin
           <span className={`absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white shadow transition-all ${on ? "left-[23px]" : "left-[3px]"}`} />
         </span>
       </button>
+    </div>
+  )
+}
+
+/** "Click sound" row with its own volume bar built into the button:
+ *  tap = on / off,  press + swipe left / right = lower / raise the click volume (full row width = 0..100%).
+ *  Keyboard: Enter / Space toggles, Left / Right arrows change the volume by 5%. */
+function ClickSoundRow({ on, onToggle, volume, setVolume }: { on: boolean; onToggle: () => void; volume: number; setVolume: (v: number) => void }) {
+  const drag = useRef<{ x: number; vol: number; w: number; moved: boolean } | null>(null)
+  const pct = Math.round(volume * 100)
+  const preview = (v: number) => {
+    if (v <= 0) return
+    try { const a = new Audio("/sounds/click.mp3"); a.volume = Math.min(1, Math.max(0, v)); a.play().catch(() => {}) } catch {}
+  }
+  return (
+    <div
+      role="switch"
+      aria-checked={on}
+      aria-label={`Click sound, volume ${pct}%`}
+      tabIndex={0}
+      data-no-click-sound
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle() }
+        else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault()
+          const v = Math.min(1, Math.max(0, Math.round((volume + (e.key === "ArrowRight" ? 0.05 : -0.05)) * 100) / 100))
+          setVolume(v); if (on) preview(v)
+        }
+      }}
+      onPointerDown={(e) => {
+        if (e.pointerType === "mouse" && e.button !== 0) return
+        drag.current = { x: e.clientX, vol: volume, w: Math.max(1, e.currentTarget.getBoundingClientRect().width), moved: false }
+        try { e.currentTarget.setPointerCapture(e.pointerId) } catch {}
+      }}
+      onPointerMove={(e) => {
+        const d = drag.current
+        if (!d) return
+        const dx = e.clientX - d.x
+        if (!d.moved && Math.abs(dx) < 8) return // small wobble of a tap is not a swipe
+        d.moved = true
+        setVolume(Math.min(1, Math.max(0, Math.round((d.vol + dx / d.w) * 100) / 100)))
+      }}
+      onPointerUp={(e) => {
+        const d = drag.current
+        drag.current = null
+        if (!d) return
+        if (d.moved) { if (on) preview(Math.min(1, Math.max(0, Math.round((d.vol + (e.clientX - d.x) / d.w) * 100) / 100))) }
+        else onToggle()
+      }}
+      onPointerCancel={() => { drag.current = null }}
+      onContextMenu={(e) => e.preventDefault()}
+      style={{ touchAction: "pan-y" }}
+      className={`${box} relative overflow-hidden min-h-[52px] px-3 py-1 flex items-center gap-2.5 select-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-emerald-500`}
+    >
+      {/* volume fill = the bar attached to the button */}
+      <div aria-hidden className={`absolute inset-y-0 left-0 bg-emerald-500/25 ${on ? "" : "opacity-40"}`} style={{ width: `${pct}%` }} />
+      <span className="relative shrink-0 text-muted-foreground">{on && volume > 0 ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}</span>
+      <span className="relative min-w-0 flex-1">
+        <span className="block text-sm font-bold">Click sound <span className="text-xs font-semibold tabular-nums opacity-60">{pct}%</span></span>
+        <span className="block text-xs text-muted-foreground">Tap: on / off · Swipe left / right: volume</span>
+      </span>
+      <span aria-hidden className="relative h-12 w-14 shrink-0 flex items-center justify-center">
+        <span className={`relative block h-6 w-11 rounded-full transition-colors ${on ? "bg-emerald-500" : "bg-black/20 dark:bg-white/20"}`}>
+          <span className={`absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white shadow transition-all ${on ? "left-[23px]" : "left-[3px]"}`} />
+        </span>
+      </span>
     </div>
   )
 }

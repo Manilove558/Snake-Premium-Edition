@@ -9,7 +9,7 @@ import { useClickSound } from "@/hooks/use-click-sound"
 import { antiGhostProps } from "@/lib/anti-ghost"
 import { setButtonSoundConfig } from "@/lib/button-sound"
 import { useClickHaptic } from "@/hooks/use-click-haptic"
-import { loadClickSound, saveClickSound } from "@/lib/click-sound"
+import { loadClickSound, saveClickSound, loadClickVolume, saveClickVolume } from "@/lib/click-sound"
 import MultiplayerLobby, { NO_LOBBY_ROOM, type LobbyActions, type LobbyRoomInfo } from "./multiplayer-lobby"
 import { SnakeStore } from "./snake-store"
 import { SnakeVault } from "./snake-vault"
@@ -639,9 +639,14 @@ export default function SnakeGame() {
   const [clickSound, setClickSound] = useState(true)
   useEffect(() => setClickSound(loadClickSound()), [])
   useEffect(() => saveClickSound(clickSound), [clickSound])
-  useClickSound({ enabled: clickSound, volume })
-  // D-pad button tick sound uses the same switch + volume (mute icon does not affect it)
-  useEffect(() => setButtonSoundConfig(clickSound, volume), [clickSound, volume])
+  // The click sound has its OWN volume (Settings: press + swipe on the "Click sound" row); it ignores the game volume bar and the mute icon
+  const [clickVolume, setClickVolume] = useState(0.8)
+  const [clickVolumeLoaded, setClickVolumeLoaded] = useState(false)
+  useEffect(() => { setClickVolume(loadClickVolume()); setClickVolumeLoaded(true) }, [])
+  useEffect(() => { if (clickVolumeLoaded) saveClickVolume(clickVolume) }, [clickVolume, clickVolumeLoaded])
+  useClickSound({ enabled: clickSound, volume: clickVolume })
+  // D-pad button tick sound uses the same switch + click volume (mute icon does not affect it)
+  useEffect(() => setButtonSoundConfig(clickSound, clickVolume), [clickSound, clickVolume])
   // Short vibration on every button press (follows the Settings "Vibration" switch)
   useClickHaptic({ enabled: hapticEnabled })
 
@@ -2330,8 +2335,10 @@ export default function SnakeGame() {
           setClickSound={(v) => {
             setClickSound(v)
             // turning it ON: play one click as a preview (the global listener is still off at this exact tap)
-            if (v && volume > 0) { const a = new Audio("/sounds/click.mp3"); a.volume = volume; a.play().catch(() => {}) }
+            if (v && clickVolume > 0) { const a = new Audio("/sounds/click.mp3"); a.volume = clickVolume; a.play().catch(() => {}) }
           }}
+          clickVolume={clickVolume}
+          setClickVolume={setClickVolume}
           onClose={() => setActiveView("GAME")}
         />
       )}
