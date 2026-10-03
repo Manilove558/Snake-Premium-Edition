@@ -67,6 +67,8 @@ interface Props {
   onExit: () => void
   onBattleStart: (code: string, playerId: string) => void
   initialCode?: string
+  /** came back via ✕ while the match is still running: do NOT hand over to the battle until the next round (countdown) */
+  returnedMidMatch?: boolean
   initialPlayerId?: string
 }
 
@@ -317,7 +319,7 @@ const JOIN_ERRORS: Record<string, string> = {
   SIGN_IN_REQUIRED: "Ranked rooms need a Google sign-in.",
 }
 
-export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onExit, onBattleStart, initialCode, initialPlayerId }: Props) {
+export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onExit, onBattleStart, initialCode, initialPlayerId, returnedMidMatch }: Props) {
   const [screen, setScreen] = useState<"setup" | "lobby">(initialCode && initialPlayerId ? "lobby" : "setup")
   const [name, setName] = useState("")
   const [joinCode, setJoinCode] = useState("")
@@ -374,6 +376,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
   const [online, setOnline] = useState(true)
   const leavingRef = useRef(false)
   const battleStartedRef = useRef(false)
+  const waitNextRoundRef = useRef(!!returnedMidMatch)
   const onBattleStartRef = useRef(onBattleStart)
   onBattleStartRef.current = onBattleStart
 
@@ -403,8 +406,10 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
         return
       }
       setRoom(r)
+      // came back mid-match: sit in the room until the match ends and a NEW round starts (or the room returns to lobby)
+      if (r && (r.status === "lobby" || r.status === "countdown")) waitNextRoundRef.current = false
       // Battle started -> hand over to the battle view (once)
-      if (r && (r.status === "countdown" || r.status === "playing" || r.status === "ended") && !battleStartedRef.current) {
+      if (r && !waitNextRoundRef.current && (r.status === "countdown" || r.status === "playing" || r.status === "ended") && !battleStartedRef.current) {
         battleStartedRef.current = true
         onBattleStartRef.current(code, playerId)
       }
@@ -430,7 +435,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
   const secondsLeft = autoStartAt ? Math.max(0, Math.ceil((autoStartAt - (now + serverOffset)) / 1000)) : null
 
   // Share room state + actions with the bottom-right action bar (Start / Leave Room live there too)
-  const canStartNow = screen === "lobby" && isHost && !loading && players.length >= startMin
+  const canStartNow = screen === "lobby" && isHost && !loading && players.length >= startMin && (!room?.status || room.status === "lobby")
   if (actionsRef) actionsRef.current = { start: () => { void handleStartBattle() }, leave: () => handleLeaveAndExit() }
   const onRoomInfoRef = useRef(onRoomInfo)
   onRoomInfoRef.current = onRoomInfo
@@ -674,6 +679,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
   const handleStartBattle = async () => {
     // Only the host may start the match (UI is disabled for everybody else, this is the safety net)
     if (!isHost || players.length < startMin) return
+    if (room?.status && room.status !== "lobby") return // a match is still running (e.g. host came back mid-match)
     setLoading(true)
     setError("")
     try {

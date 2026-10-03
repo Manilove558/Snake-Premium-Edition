@@ -528,6 +528,8 @@ export default function SnakeGame() {
   const [graceActive, setGraceActive] = useState(false)
   // Multiplayer views: lobby -> battle. Single-player modes are untouched.
   const [mpView, setMpView] = useState<"none" | "lobby" | "battle">("none")
+  // true when the player came back to the room by pressing ✕ while a match is still running (lobby must not throw them back in)
+  const [mpMidMatch, setMpMidMatch] = useState(false)
   const [mpSession, setMpSession] = useState<{ code: string; playerId: string } | null>(null)
   // Which panel the central frame shows. Everything (Store, Vault, Settings, Rank, Map, Multiplayer, ...) renders INSIDE the frame.
   const [activeView, setActiveView] = useState<ViewId>("GAME")
@@ -2337,6 +2339,7 @@ export default function SnakeGame() {
             }}
             initialCode={mpSession?.code}
             initialPlayerId={mpSession?.playerId}
+            returnedMidMatch={mpMidMatch}
           />
         </div>,
         frameEl,
@@ -2358,7 +2361,8 @@ export default function SnakeGame() {
             setMpView("none")
             setMpSession(null)
           }}
-          onBackToLobby={() => { setMpView("lobby"); setActiveView("MULTIPLAYER") }}
+          onBackToLobby={() => { setMpMidMatch(false); setMpView("lobby"); setActiveView("MULTIPLAYER") }}
+          onReturnToRoom={() => { setMpMidMatch(true); setMpView("lobby"); setActiveView("MULTIPLAYER") }}
         />
       )}
       {/* Room-invite notifications (signed-in players only) */}

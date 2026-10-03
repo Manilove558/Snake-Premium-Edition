@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Button } from "@/components/ui/button"
-import { X, Trophy, Skull, Crown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, RotateCcw, Home, Loader2 } from "lucide-react"
+import { X, Trophy, Skull, Crown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, RotateCcw, Loader2 } from "lucide-react"
 import { ref, set, update, remove, onValue, push, increment } from "firebase/database"
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase"
 import {
@@ -71,6 +71,8 @@ interface Props {
   smoothMove?: boolean
   onExit: () => void
   onBackToLobby: () => void
+  /** Alive player pressed the red ✕ mid-match: go back to the room (lobby) while the match goes on without them */
+  onReturnToRoom?: () => void
 }
 
 interface Seg {
@@ -105,7 +107,7 @@ interface RankedResultRow {
 
 const matchKeyOf = (r: MpRoom) => `${r.code}:${r.game?.countdownEndsAt ?? 0}`
 
-export default function MultiplayerBattle({ code, playerId, darkMode, controlMode, soundEnabled, volume, centerEl, sideEl, leftEl, bestScore, smoothMove = true, onExit, onBackToLobby }: Props) {
+export default function MultiplayerBattle({ code, playerId, darkMode, controlMode, soundEnabled, volume, centerEl, sideEl, leftEl, bestScore, smoothMove = true, onExit, onBackToLobby, onReturnToRoom }: Props) {
   const [room, setRoom] = useState<MpRoom | null>(null)
   const [snakes, setSnakes] = useState<Record<string, MpSnakeState>>({})
   const [food, setFood] = useState<Seg | null>(null)
@@ -699,6 +701,24 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
     onExit()
   }
 
+  // Red ✕ while still ALIVE in a running match: back to the ROOM (lobby), not out of the room.
+  // My snake is removed / marked dead (counts as last place if ranked) and the others play on; the lobby waits for the next round.
+  const handleReturnToRoom = async () => {
+    if (loopRef.current) clearInterval(loopRef.current)
+    if (tickerRef.current) clearInterval(tickerRef.current)
+    aliveRef.current = false
+    try {
+      const db = getFirebaseDb()
+      await Promise.all([
+        update(ref(db, `rooms/${code}/players/${playerId}`), { alive: false, diedAt: Date.now() }),
+        remove(mySnakeRef(code, playerId)),
+      ])
+    } catch {}
+    await settleRankedOnExit().catch(() => {})
+    if (onReturnToRoom) onReturnToRoom()
+    else onBackToLobby()
+  }
+
   // Rematch: start the next round right away (same room, same settings)
   const handleRematch = async () => {
     if (!isHost || endBusy) return
@@ -888,6 +908,10 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   const steering = phase === "countdown" || (phase === "playing" && aliveRef.current)
   const myScore = myPlayer?.score ?? 0
 
+  // What the red ✕ does right now
+  const aliveInMatch = (phase === "countdown" || phase === "playing") && myPlayer?.alive !== false && aliveRef.current
+  const xBackToRoom = aliveInMatch || (phase === "ended" && isHost)
+  const xAction = aliveInMatch ? handleReturnToRoom : phase === "ended" && isHost ? handleBackToRoom : handleExit
   if (!centerEl || !sideEl || !leftEl) return null
 
   return (
@@ -961,36 +985,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
                     <div className="text-white">+{rankReward.coins.toLocaleString()} coins · +{rankReward.gems} gem{rankReward.gems > 1 ? "s" : ""}</div>
                   </div>
                 )}
-                {/* Split button: Rematch | Back to room */}
-                <div
-                  className={`mt-4 mx-auto flex h-16 w-full max-w-[220px] rounded-xl overflow-hidden shadow-lg shadow-emerald-500/30 bg-gradient-to-r from-emerald-500 to-emerald-400 ${
-                    !isHost ? "opacity-50" : ""
-                  }`}
-                >
-                  <button
-                    onClick={handleRematch}
-                    disabled={!isHost || endBusy}
-                    aria-label="Rematch"
-                    title="Rematch"
-                    className="flex-1 flex flex-col items-center justify-center gap-0.5 text-white hover:bg-white/15 active:bg-white/25 transition-colors disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                  >
-                    {endBusy ? <Loader2 className="w-6 h-6 animate-spin" /> : <RotateCcw className="w-6 h-6" />}
-                    <span className="text-[10px] font-semibold leading-none">Rematch</span>
-                  </button>
-                  <div className="w-px my-2 bg-white/50" />
-                  <button
-                    onClick={handleBackToRoom}
-                    disabled={!isHost || endBusy}
-                    aria-label="Back to room"
-                    title="Back to room"
-                    className="flex-1 flex flex-col items-center justify-center gap-0.5 text-white hover:bg-white/15 active:bg-white/25 transition-colors disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                  >
-                    <Home className="w-6 h-6" />
-                    <span className="text-[10px] font-semibold leading-none">Back to room</span>
-                  </button>
-                </div>
-                {!isHost && <div className="text-white/60 text-xs mt-2">Waiting for host to choose…</div>}
-                {endError && <div className="text-red-300 text-xs mt-2">{endError}</div>}
+                {/* Rematch / Back to room moved to the right sidebar (Rematch button + red ✕) */}
               </div>
             </div>
           )}
@@ -1015,11 +1010,14 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
               <div className="text-[8px] uppercase tracking-wider opacity-50 font-semibold">Score</div>
               <div className="text-base font-extrabold tabular-nums leading-tight">{myScore}</div>
             </div>
+            {/* Red ✕ (see xAction): alive in a running match -> back to the room; end screen + host -> back to the room for
+                everyone; dead / spectating or guest on the end screen -> leave the battle. */}
             <button
-              aria-label="Leave battle"
-              title="Leave battle"
-              onClick={handleExit}
-              className="d-pad-btn self-center h-10 w-10 rounded-full flex items-center justify-center text-red-500 bg-white/70 dark:bg-white/5 border border-red-500/30 shadow-sm active:scale-90 transition-transform"
+              aria-label={xBackToRoom ? "Back to room" : "Leave battle"}
+              title={xBackToRoom ? "Back to room" : "Leave battle"}
+              onClick={xAction}
+              disabled={phase === "ended" && isHost && endBusy}
+              className="d-pad-btn self-center h-10 w-10 rounded-full flex items-center justify-center text-red-500 bg-white/70 dark:bg-white/5 border border-red-500/30 shadow-sm active:scale-90 transition-transform disabled:opacity-50"
             >
               <X className="h-5 w-5" />
             </button>
@@ -1028,6 +1026,24 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
               <div className="text-base font-extrabold tabular-nums leading-tight">{Math.max(bestScore, myScore)}</div>
             </div>
           </div>
+
+          {/* End screen only: Rematch (host starts the next round in the same room with the same settings) */}
+          {phase === "ended" && (
+            <div className="flex flex-col gap-1">
+              <button
+                onClick={handleRematch}
+                disabled={!isHost || endBusy}
+                aria-label="Rematch"
+                title={isHost ? "Rematch" : "Only the host can start a rematch"}
+                className="d-pad-btn h-11 w-full rounded-xl flex items-center justify-center gap-2 text-white text-sm font-bold bg-gradient-to-r from-emerald-500 to-emerald-400 shadow-md shadow-emerald-500/30 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {endBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <RotateCcw className="h-5 w-5" />}
+                Rematch
+              </button>
+              {!isHost && <div className="text-[10px] text-center opacity-60 leading-tight">Waiting for host…</div>}
+              {endError && <div className="text-[10px] text-center text-red-500 leading-tight">{endError}</div>}
+            </div>
+          )}
 
           {(settings.map !== "classic" || settings.teleport || settings.avoidCollision) && (
             <div className="text-[9px] opacity-50 leading-tight">
