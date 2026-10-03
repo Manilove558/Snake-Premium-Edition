@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Outfit } from 'next/font/google'
 import './globals.css'
+import { NOTCH_INIT_SCRIPT } from '@/lib/notch'
 
 const outfit = Outfit({ subsets: ['latin'], variable: '--font-outfit' })
 
@@ -34,7 +35,12 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={outfit.variable}>
+    // suppressHydrationWarning: the inline script below sets <html data-notch> before React hydrates
+    <html lang="en" className={outfit.variable} suppressHydrationWarning>
+      <head>
+        {/* Applies the saved Notch setting before the first paint, so a saved OFF never flashes the safe-area layout */}
+        <script dangerouslySetInnerHTML={{ __html: NOTCH_INIT_SCRIPT }} />
+      </head>
       <body className="font-sans">{children}</body>
     </html>
   )

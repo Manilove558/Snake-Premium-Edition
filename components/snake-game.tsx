@@ -29,6 +29,7 @@ import { loadSmoothMove, saveSmoothMove } from "@/lib/smooth-move"
 import { RotateHint } from "./rotate-hint"
 import { PanelHostContext, type ViewId } from "./panel-host"
 import { useBackButton } from "@/hooks/use-back-button"
+import { useNotchScreen } from "@/hooks/use-notch-screen"
 import { ConfirmDialog } from "./confirm-dialog"
 import { installBackGuard, setBackFallback, exitApplication } from "@/lib/back-stack"
 
@@ -629,6 +630,8 @@ export default function SnakeGame() {
   const [controlMode, setControlMode] = useState<"buttons" | "swipe">("buttons")
   // "Smooth movement" (Battle Royale style gliding) — saved on this device, on by default
   const [smoothMove, setSmoothMove] = useState(true)
+  // Notch Display / Safe Area Cutout (persisted; applied to <html data-notch>, see lib/notch.ts)
+  const { notchSafe, setNotchSafe } = useNotchScreen()
   useEffect(() => setSmoothMove(loadSmoothMove()), [])
   useEffect(() => saveSmoothMove(smoothMove), [smoothMove])
   // Random snake start position (head + direction), regenerated on every mode change
@@ -2352,6 +2355,8 @@ export default function SnakeGame() {
           }}
           clickVolume={clickVolume}
           setClickVolume={setClickVolume}
+          notchSafe={notchSafe}
+          setNotchSafe={(v) => { triggerHaptic(15); setNotchSafe(v) }}
           onClose={() => setActiveView("GAME")}
         />
       )}

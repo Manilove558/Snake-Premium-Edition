@@ -27,10 +27,30 @@ export function saveNotch(on: boolean): void {
   }
 }
 
-/** Flip the attribute the CSS listens to. Instant, no React render involved. */
+/**
+ * Native app only: with the notch setting OFF the game is truly full screen, so the status / navigation bars are hidden
+ * too (otherwise the HUD would sit under the clock and battery icons). A swipe from the screen edge shows them briefly.
+ * Set to false to keep the system bars visible when the notch setting is OFF.
+ */
+const HIDE_SYSTEM_BARS_WHEN_OFF = true
+
+async function syncSystemBars(on: boolean): Promise<void> {
+  if (!HIDE_SYSTEM_BARS_WHEN_OFF) return
+  try {
+    const { Capacitor, SystemBars } = await import("@capacitor/core")
+    if (!Capacitor.isNativePlatform()) return
+    if (on) await SystemBars.show()
+    else await SystemBars.hide()
+  } catch {
+    /* plugin unavailable: the CSS part of the setting still works */
+  }
+}
+
+/** Flip the attribute the CSS listens to (instant, no React render involved) and sync the native system bars. */
 export function applyNotch(on: boolean): void {
   if (typeof document === "undefined") return
   document.documentElement.setAttribute("data-notch", on ? "on" : "off")
+  void syncSystemBars(on)
 }
 
 /**

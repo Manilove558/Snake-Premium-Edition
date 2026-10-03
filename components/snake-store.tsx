@@ -215,7 +215,7 @@ export function SnakeStore() {
       </button>
       {open && createPortal(
         <div className="absolute inset-0 z-[10] overflow-y-auto overscroll-contain backdrop-blur-md bg-black/25 dark:bg-black/50 text-[#123321] dark:text-white"
-          style={{ paddingTop: "max(12px, env(safe-area-inset-top))", paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+          style={{ paddingTop: "max(12px, var(--sai-top))", paddingBottom: "max(12px, var(--sai-bottom))" }}>
           <div className="relative mx-2 sm:mx-auto max-w-xl min-h-[calc(100%-0px)] rounded-3xl px-4 pt-4 pb-8 animate-fade-in shadow-2xl border border-white/40 dark:border-white/10 bg-[#f1f4f1]/95 dark:bg-[#0b0f14]/95">
             <div className="flex items-start justify-between">
               <div>
@@ -313,7 +313,7 @@ export function SnakeStore() {
               </div>
             </div>
           )}
-          {msg && <div className="fixed z-[120] left-1/2 -translate-x-1/2 bottom-[max(24px,env(safe-area-inset-bottom))] rounded-full px-5 py-2.5 text-sm font-semibold text-white bg-emerald-500 shadow-lg shadow-emerald-500/40">{msg}</div>}
+          {msg && <div className="fixed z-[120] left-1/2 -translate-x-1/2 bottom-[max(24px,var(--sai-bottom))] rounded-full px-5 py-2.5 text-sm font-semibold text-white bg-emerald-500 shadow-lg shadow-emerald-500/40">{msg}</div>}
           {confirmBuy && (
             <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/40 backdrop-blur-sm p-6" onClick={() => setConfirmBuy(null)}>
               <div onClick={(e) => e.stopPropagation()} className="w-full max-w-xs rounded-3xl bg-[#f1f4f1] dark:bg-[#0b0f14] border border-black/5 dark:border-white/10 p-5 shadow-2xl text-center text-[#123321] dark:text-white animate-fade-in">

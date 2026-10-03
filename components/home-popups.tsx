@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useBackButton } from "@/hooks/use-back-button"
 import { createPortal } from "react-dom"
-import { X, Volume2, VolumeX, Trophy, Globe, Users, Moon, Sun, Gamepad2, Move, Vibrate, VibrateOff, ChevronLeft, ChevronRight } from "lucide-react"
+import { X, Volume2, VolumeX, Trophy, Globe, Users, Moon, Sun, Gamepad2, Move, Vibrate, VibrateOff, Smartphone, ChevronLeft, ChevronRight } from "lucide-react"
 import { fetchLeaderboard, type LeaderboardRow } from "@/lib/ranked-db"
 import { getTier } from "@/lib/ranked"
 import { openPlayerProfile, useFriends } from "@/lib/friends"
@@ -138,9 +138,11 @@ type SettingsProps = {
   clickSound: boolean; setClickSound: (v: boolean) => void
   /** the click sound's OWN volume 0..1 (press the "Click sound" row and swipe left / right) */
   clickVolume: number; setClickVolume: (v: number) => void
+  /** Notch Display / Safe Area Cutout: ON = UI stays clear of the camera notch + rounded corners, OFF = full-screen edge-to-edge */
+  notchSafe: boolean; setNotchSafe: (v: boolean) => void
   onClose: () => void
 }
-export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume, darkMode, setDarkMode, controlMode, setControlMode, hapticEnabled, setHapticEnabled, hapticSupported, smoothMove, setSmoothMove, clickSound, setClickSound, clickVolume, setClickVolume, onClose }: SettingsProps) {
+export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume, darkMode, setDarkMode, controlMode, setControlMode, hapticEnabled, setHapticEnabled, hapticSupported, smoothMove, setSmoothMove, clickSound, setClickSound, clickVolume, setClickVolume, notchSafe, setNotchSafe, onClose }: SettingsProps) {
   const label = "text-[10px] tracking-[.2em] font-bold opacity-50 px-1"
   const seg = (v: "buttons" | "swipe", text: string, icon: ReactNode) => (
     <button key={v} onClick={() => setControlMode(v)} aria-pressed={controlMode === v}
@@ -185,6 +187,9 @@ export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume
       {/* Movement style */}
       <div className={label}>MOVEMENT</div>
       <Row title="Smooth movement" hint={smoothMove ? "Battle Royale style: the snake glides" : "Off: classic cell-by-cell steps"} on={smoothMove} onToggle={() => setSmoothMove(!smoothMove)} icon={<Move className="h-5 w-5" />} />
+      {/* Display: notch / safe area */}
+      <div className={label}>DISPLAY</div>
+      <Row title="Notch Display / Safe Area Cutout" hint={notchSafe ? "On: the UI stays clear of the notch and rounded corners" : "Off: full screen, the UI uses the whole display"} on={notchSafe} onToggle={() => setNotchSafe(!notchSafe)} icon={<Smartphone className="h-5 w-5" />} />
     </PopupShell>
   )
 }
