@@ -27,7 +27,7 @@ export interface PublicProfile {
   best: number
   owned: number
   vip: boolean
-  /** equipped store avatar id ("avatar_photo" = show the Google photo) */
+  /** equipped store avatar id ("avatar_photo" = the player explicitly chose to show their Google photo) */
   avatar: string
   createdAt: number | null
 }
@@ -51,7 +51,7 @@ const db = () => getFirebaseDb()
 
 function currentStats() {
   const s = getStoreState()
-  return { best: s.best, owned: Math.max(0, s.owned.length - 3), vip: isVip(s), avatar: s.equipped?.avatar || "avatar_photo" }
+  return { best: s.best, owned: Math.max(0, s.owned.length - 3), vip: isVip(s), avatar: s.equipped?.avatar || "avatar_default" }
 }
 
 /** Make this account findable by Player ID and visible to other players. */
@@ -98,7 +98,7 @@ export async function fetchPublicProfile(uid: string, force = false): Promise<Pu
         best: Number(v.best) || 0,
         owned: Number(v.owned) || 0,
         vip: !!v.vip,
-        avatar: typeof v.avatar === "string" ? v.avatar : "avatar_photo",
+        avatar: typeof v.avatar === "string" ? v.avatar : "avatar_default",
         createdAt: v.createdAt ?? null,
       }
     : null

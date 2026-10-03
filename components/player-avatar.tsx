@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from "react"
 import { getCatalogItem, type StoreItem } from "@/lib/store"
 
 /**
- * The avatar item a player is really showing, or null (= use the Google photo).
- * A VIP avatar only counts while that player still has VIP (`vip`), otherwise it falls back to the photo.
+ * The avatar item a player is really showing, or null (= no store image: either the explicit "Google Photo" choice, or the default icon).
+ * A VIP avatar only counts while that player still has VIP (`vip`), otherwise it falls back to the default icon (NOT the Google photo).
  */
 export function resolveAvatar(avatarId?: string | null, vip = false): StoreItem | null {
   const it = avatarId ? getCatalogItem(avatarId) : undefined
@@ -54,7 +54,11 @@ function usePlayOnceSrc(src: string | undefined, enabled: boolean, key: string):
   return url
 }
 
-/** Profile picture: chosen store avatar > Google photo > generic icon. Used for me AND for other players. */
+/**
+ * Profile picture: the avatar the player chose > generic icon. Used for me AND for other players.
+ * The Google photo is shown ONLY when the player explicitly picked the "Google Photo" avatar (`avatar_photo`);
+ * it is never a silent fallback, so a missing / expired / unknown avatar shows the default icon instead.
+ */
 export function PlayerAvatar({
   photo,
   avatarId,
@@ -116,11 +120,11 @@ export function PlayerAvatar({
       </div>
     )
   }
-  if (photo) {
+  if (photo && avatarId === "avatar_photo") {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={photo} alt="" referrerPolicy="no-referrer" style={{ width: size, height: size }} className={base} />
   }
-  // default icon (no store avatar, no Google photo) — black line art, inverted in dark mode
+  // default icon (no store avatar chosen) — black line art, inverted in dark mode
   // eslint-disable-next-line @next/next/no-img-element
   return <img src="/default-avatar.png" alt="" style={{ width: size, height: size }} className={`${base} object-cover dark:invert`} />
 }

@@ -158,7 +158,7 @@ const cleanProfile = (uid: string, v: unknown): PublicProfile | null => {
     best: Math.max(0, Math.floor(Number(r.best) || 0)),
     owned: Math.max(0, Math.floor(Number(r.owned) || 0)),
     vip: r.vip === true,
-    avatar: typeof r.avatar === "string" ? r.avatar : "avatar_photo",
+    avatar: typeof r.avatar === "string" ? r.avatar : "avatar_default",
     createdAt: typeof r.createdAt === "number" ? r.createdAt : null,
   }
 }

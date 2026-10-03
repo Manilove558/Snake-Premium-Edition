@@ -1,5 +1,6 @@
 "use client"
 
+import { PlayerAvatar } from "./player-avatar"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -755,13 +756,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
                       }`}
                     >
                       <span className="relative shrink-0">
-                        {prof?.photo ? (
-                          <img src={prof.photo} alt={fname} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
-                        ) : (
-                          <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold bg-emerald-500/20 text-emerald-500">
-                            {fname.slice(0, 1).toUpperCase()}
-                          </span>
-                        )}
+                        <PlayerAvatar photo={prof?.photo ?? null} avatarId={prof?.avatar ?? null} vip={!!prof?.vip} size={32} ring={false} />
                         <span
                           className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 ${
                             darkMode ? "border-[#0d1f16]" : "border-white"
