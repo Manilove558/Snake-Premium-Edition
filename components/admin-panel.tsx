@@ -252,11 +252,14 @@ function blankDraft(kind: Kind): StoreItem {
 }
 
 function Sheet({ title, onClose, children, compact }: { title: string; onClose: () => void; children: React.ReactNode; compact?: boolean }) {
-  return (
-    <div className={`fixed inset-0 z-[230] flex ${compact ? "items-center p-4" : "items-end sm:items-center"} justify-center bg-black/40 backdrop-blur-sm`} onClick={onClose}>
+  // Portal into the central frame (outside the Admin panel) so the sheet — search box, tabs, list — always sits ON TOP of the
+  // Admin page. Rendered inside it, the Admin card's animation/transform trapped the `fixed` sheet and its top got hidden.
+  const target = usePanelTarget()
+  const node = (
+    <div className={`snake-sheet fixed inset-0 z-[230] flex ${compact ? "items-center p-4" : "items-end sm:items-center"} justify-center bg-black/40 backdrop-blur-sm`} onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`${compact ? "w-full max-w-[340px] max-h-[70%] rounded-3xl" : "w-full max-w-md max-h-[90%] rounded-t-3xl sm:rounded-3xl"} overflow-y-auto overscroll-contain bg-[#f1f4f1] dark:bg-[#0b0f14] border border-black/5 dark:border-white/10 p-4 shadow-2xl animate-fade-in text-[#123321] dark:text-white`}
+        className={`${compact ? "w-full max-w-[340px] max-h-[70%] rounded-3xl" : "w-full max-w-md max-h-[90%] rounded-t-3xl sm:rounded-3xl"} overflow-y-auto overscroll-contain text-[#123321] dark:text-white bg-[#f1f4f1] dark:bg-[#0b0f14] border border-black/5 dark:border-white/10 p-4 shadow-2xl animate-fade-in text-[#123321] dark:text-white`}
         style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }}
       >
         <div className="flex items-center justify-between mb-2.5">
@@ -267,6 +270,7 @@ function Sheet({ title, onClose, children, compact }: { title: string; onClose: 
       </div>
     </div>
   )
+  return target ? createPortal(node, target) : node
 }
 
 /** Admin decides how an item is sold: Free, Coins, Gems or real money (₹). */
