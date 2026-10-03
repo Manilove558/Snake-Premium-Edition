@@ -4,6 +4,8 @@ Settings -> MOVEMENT -> "Smooth movement" (ON by default, saved on the device).
 ON  = snake glides between cells at 60fps (Battle Royale style)
 OFF = classic cell-by-cell steps
 Works in: single-player, classic multiplayer battle, Battle Royale. Game logic/speed/collisions are unchanged.
+Smooth ON also draws EYES on the head, identical to the Battle Royale snake (plain white dots), in single-player + classic battle.
+Teleport / portal / reverse / new level snap the whole snake instead of gliding across the board.
 
 NEW       lib/smooth-move.ts, components/smooth-snake-layer.tsx
 MODIFIED  components/snake-game.tsx, home-popups.tsx, multiplayer-battle.tsx, royale-battle.tsx

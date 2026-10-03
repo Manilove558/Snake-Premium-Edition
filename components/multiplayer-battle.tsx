@@ -29,7 +29,7 @@ import { getBattleMap } from "@/lib/battle-maps"
 import { useBotHost } from "@/hooks/use-bot-host"
 import { BotTag } from "./bot-tag"
 import { SnakeInterpolator } from "@/lib/br/interpolation"
-import { sampleTickMs } from "@/lib/smooth-move"
+import { drawSnakeEyes, eyeDirection, pushGlide, sampleTickMs } from "@/lib/smooth-move"
 import { claimRankRewards } from "@/lib/store"
 import VoiceChat from "./voice-chat"
 import { FriendAction } from "./snake-friends"
@@ -140,6 +140,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
   const snakesStateRef = useRef<Record<string, MpSnakeState>>({})
   // smooth movement: one interpolator for my snake + one per remote snake (fed by the same data the game already syncs)
   const myInterp = useRef(new SnakeInterpolator())
+  const eyeDirs = useRef<Map<string, { x: number; y: number }>>(new Map())
   const remoteInterps = useRef<Map<string, { interp: SnakeInterpolator; ts: number }>>(new Map())
   const foodStateRef = useRef<Seg | null>(null)
   const spawnedRef = useRef(false)
@@ -218,7 +219,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
         }
         if (r.ts !== s.ts) {
           r.ts = s.ts
-          r.interp.push(s.seg ?? [], nowP)
+          pushGlide(r.interp, s.seg ?? [], nowP)
         }
       }
       for (const pid of [...remoteInterps.current.keys()]) if (!(pid in v)) remoteInterps.current.delete(pid)
@@ -267,7 +268,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
     snakeRef.current = snake
     spawnedRef.current = true
     myInterp.current.clear()
-    myInterp.current.push([...snake], performance.now())
+    pushGlide(myInterp.current, [...snake], performance.now())
     set(mySnakeRef(code, playerId), { seg: snake, dx: s.dx, dy: s.dy, ts: Date.now() }).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room])
@@ -410,7 +411,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
     snakeRef.current.unshift(newHead)
     if (growthRef.current > 0) growthRef.current -= 1
     else snakeRef.current.pop()
-    myInterp.current.push([...snakeRef.current], performance.now())
+    pushGlide(myInterp.current, [...snakeRef.current], performance.now())
 
     set(mySnakeRef(code, playerId), {
       seg: snakeRef.current,
@@ -787,7 +788,7 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
     }
 
     // Remote snakes (fresh only), then mine on top
-    const drawSnake = (seg: Seg[], color: string, glow: boolean) => {
+    const drawSnake = (seg: Seg[], color: string, glow: boolean, key: string) => {
       seg.forEach((s, i) => {
         ctx.save()
         if (glow && i === 0) {
@@ -805,6 +806,13 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
         ctx.fill()
         ctx.restore()
       })
+      // Smooth movement also gives the snake eyes (looking where it is heading)
+      if (smooth && seg.length > 1) {
+        const last = eyeDirs.current.get(key) ?? { x: 1, y: 0 }
+        const dir = eyeDirection(seg[0], seg[1], last)
+        eyeDirs.current.set(key, dir)
+        drawSnakeEyes(ctx, seg[0].x, seg[0].y, dir, CELL)
+      }
     }
 
     const entries = Object.entries(snakes).filter(([, s]) => now - (s.ts ?? 0) <= BATTLE_SNAKE_STALE_MS)
@@ -812,11 +820,11 @@ export default function MultiplayerBattle({ code, playerId, darkMode, controlMod
       if (pid === playerId) continue
       const color = room?.players?.[pid]?.color ?? "#888888"
       const glide = smooth ? remoteInterps.current.get(pid)?.interp.sample(nowP, sampleTickMs(true, BATTLE_TICK_MS)) : null
-      drawSnake(glide && glide.length > 0 ? glide : (s.seg ?? []), color, false)
+      drawSnake(glide && glide.length > 0 ? glide : (s.seg ?? []), color, false, pid)
     }
     if (aliveRef.current && snakeRef.current.length > 0) {
       const glide = smooth ? myInterp.current.sample(nowP, sampleTickMs(true, BATTLE_TICK_MS)) : null
-      drawSnake(glide && glide.length > 0 ? glide : snakeRef.current, myPlayer?.color ?? "#3af08d", true)
+      drawSnake(glide && glide.length > 0 ? glide : snakeRef.current, myPlayer?.color ?? "#3af08d", true, playerId)
     }
   }
 

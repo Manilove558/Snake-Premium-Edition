@@ -7,6 +7,7 @@
 // trail, portals, HUD) exactly as before and just skips the snake while this layer is active.
 import { useEffect, useRef } from "react"
 import { SnakeInterpolator, type Cell } from "@/lib/br/interpolation"
+import { drawSnakeEyes, eyeDirection, pushGlide } from "@/lib/smooth-move"
 
 interface SkinLook {
   head?: string
@@ -33,6 +34,7 @@ interface Props {
 export default function SmoothSnakeLayer({ snake, active, tickMs, cell, cols, rows, skin, graceActive, darkMode }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const interp = useRef(new SnakeInterpolator())
+  const lastDir = useRef<Cell>({ x: 1, y: 0 })
   const live = useRef({ active, tickMs, cell, skin, graceActive, darkMode })
   live.current = { active, tickMs, cell, skin, graceActive, darkMode }
 
@@ -42,7 +44,7 @@ export default function SmoothSnakeLayer({ snake, active, tickMs, cell, cols, ro
       interp.current.clear()
       return
     }
-    interp.current.push(snake.map((s) => ({ x: s.x, y: s.y })), performance.now())
+    pushGlide(interp.current, snake.map((s) => ({ x: s.x, y: s.y })), performance.now())
   }, [snake, active])
 
   useEffect(() => {
@@ -78,6 +80,11 @@ export default function SmoothSnakeLayer({ snake, active, tickMs, cell, cols, ro
         ctx.roundRect(segs[i].x * c + 1, segs[i].y * c + 1, c - 2, c - 2, isHead ? 5 : 4)
         ctx.fill()
         ctx.restore()
+      }
+      // eyes on the head, looking where the snake is heading
+      if (n > 1) {
+        lastDir.current = eyeDirection(segs[0], segs[1], lastDir.current)
+        drawSnakeEyes(ctx, segs[0].x, segs[0].y, lastDir.current, c)
       }
     }
     raf = requestAnimationFrame(frame)
