@@ -4,8 +4,10 @@
 //   npm run server:dev         -> tsx watch server/index.ts
 //
 // Environment
-//   PORT          default 4000
-//   CORS_ORIGINS  comma separated allow-list, default covers Next dev + Capacitor (see below)
+//   PORT                        default 4000
+//   CORS_ORIGINS                comma separated allow-list, default covers Next dev + Capacitor (see below)
+//   FIREBASE_SERVICE_ACCOUNT_JSON  service-account JSON (one line) — enables Firebase ID-token
+//                                verification. Without it connections are accepted but UNVERIFIED.
 //
 // This must run as its OWN long-lived Node process (Railway, Fly.io, Render, a VPS …).
 // It cannot live inside Next.js: the app is exported statically (webDir: "out") and serverless
@@ -58,6 +60,59 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   maxHttpBufferSize: 10_000, // all our payloads are tiny — refuse anything big
   transports: ["websocket", "polling"],
 })
+
+// ---------------------------------------------------------------------------
+// Optional Firebase ID-token verification. Set FIREBASE_SERVICE_ACCOUNT_JSON
+// (the service-account JSON, one line) to turn it on. Without it every
+// connection is accepted but marked unverified (uid = null) — fine for casual
+// play, NOT for ranked: the client settles ranked through the Firebase SDK,
+// whose security rules still bind writes to auth.uid.
+// ---------------------------------------------------------------------------
+
+type VerifyFn = (token: string) => Promise<string | null>
+let verifyIdToken: VerifyFn | null = null
+
+async function initAuth(): Promise<void> {
+  const sa = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+  if (!sa) {
+    console.warn("[auth] FIREBASE_SERVICE_ACCOUNT_JSON not set — connections will be UNVERIFIED (no ranked)")
+    return
+  }
+  try {
+    const admin = await import("firebase-admin")
+    const cred = JSON.parse(sa) as { projectId?: string; clientEmail?: string; privateKey?: string }
+    if (!admin.apps.length) {
+      admin.initializeApp({ credential: admin.credential.cert(cred as Parameters<typeof admin.credential.cert>[0]) })
+    }
+    verifyIdToken = async (token: string) => {
+      try {
+        const decoded = await admin.auth().verifyIdToken(token)
+        return typeof decoded.uid === "string" ? decoded.uid : null
+      } catch {
+        return null
+      }
+    }
+    console.log("[auth] Firebase ID-token verification ON")
+  } catch (err) {
+    console.error("[auth] failed to init firebase-admin — connections will be UNVERIFIED:", (err as Error).message)
+  }
+}
+
+io.use(async (socket, next) => {
+  const token = (socket.handshake.auth as Record<string, unknown> | undefined)?.token
+  if (typeof token === "string" && token.length > 0 && verifyIdToken) {
+    const uid = await verifyIdToken(token)
+    socket.data.uid = uid
+    socket.data.verified = uid !== null
+  } else {
+    socket.data.uid = null
+    socket.data.verified = false
+  }
+  next()
+})
+
+const verifiedUidOf = (socket: GameSocket): string | null =>
+  typeof socket.data.uid === "string" ? socket.data.uid : null
 
 /** socket.io <-> RoomManager. The two casts are the only place event names lose their static typing. */
 type AnyEmitter = { emit: (event: string, payload: unknown) => unknown }
@@ -125,9 +180,9 @@ io.on("connection", (socket: GameSocket) => {
     }
   }
 
-  socket.on("CREATE_ROOM", (p, ack) => handle(ack, () => manager.createRoom(socket.id, p, Date.now())))
-  socket.on("JOIN_ROOM", (p, ack) => handle(ack, () => manager.joinRoom(socket.id, p, Date.now())))
-  socket.on("QUICK_MATCH", (p, ack) => handle(ack, () => manager.quickMatch(socket.id, p, Date.now())))
+  socket.on("CREATE_ROOM", (p, ack) => handle(ack, () => manager.createRoom(socket.id, p, Date.now(), verifiedUidOf(socket))))
+  socket.on("JOIN_ROOM", (p, ack) => handle(ack, () => manager.joinRoom(socket.id, p, Date.now(), verifiedUidOf(socket))))
+  socket.on("QUICK_MATCH", (p, ack) => handle(ack, () => manager.quickMatch(socket.id, p, Date.now(), verifiedUidOf(socket))))
   socket.on("RECONNECT_ROOM", (p, ack) => handle(ack, () => manager.reconnect(socket.id, p, Date.now())))
   socket.on("LEAVE_ROOM", (ack) => handle(ack, () => manager.leave(socket.id, Date.now())))
   socket.on("SET_READY", (p, ack) => handle(ack, () => manager.setReady(socket.id, p, Date.now())))
@@ -179,6 +234,7 @@ const loop = (): void => {
 httpServer.listen(PORT, () => {
   console.log(`[snake] Socket.io server on :${PORT}  (protocol v${PROTOCOL_VERSION}, ${NET.TICK_RATE} TPS)`)
   console.log(`[snake] allowed origins: ${ORIGINS.join(", ")}`)
+  void initAuth()
   loop()
 })
 

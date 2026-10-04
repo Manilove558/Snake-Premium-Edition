@@ -43,6 +43,7 @@ import RankedPanel, { RankedTag } from "./ranked-panel"
 import { isGoogleUser } from "@/lib/ranked-db"
 import { RANKED_MIN_PLAYERS } from "@/lib/ranked"
 import { VipCrown } from "./vip-crown"
+import NetworkSession from "./network-session"
 
 /** What the home screen's bottom-right action bar needs to know about the room (host-only start, leave) */
 export interface LobbyRoomInfo {
@@ -335,6 +336,8 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
   const lastPlayerCountRef = useRef<number | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [tab, setTab] = useState<"casual" | "ranked">("casual")
+  /** "socket" = the new Socket.io path (runs next to Firebase, nothing replaced) */
+  const [netMode, setNetMode] = useState<"firebase" | "socket">("firebase")
   const { user: authUser } = useAuthUser()
   const st = useStore()
   const myUid = authUser?.uid ?? null
@@ -832,6 +835,24 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
           <div className="text-xs mb-4 px-3 py-2 rounded-xl bg-red-500/15 text-red-600 dark:text-red-400">{error}</div>
         )}
 
+        {/* connection path: Firebase (classic) or the new Socket.io server */}
+        <div className={`flex items-center justify-between mb-3 px-3 py-2 rounded-xl border text-xs ${darkMode ? "border-white/10 bg-white/5" : "border-black/10 bg-black/5"}`}>
+          <span className={darkMode ? "text-white/70" : "text-black/70"}>
+            {netMode === "socket" ? "⚡ Socket.io server (low latency)" : "🔥 Firebase (classic)"}
+          </span>
+          <button
+            type="button"
+            onClick={() => setNetMode(netMode === "socket" ? "firebase" : "socket")}
+            className={`px-3 py-1 rounded-lg font-semibold ${netMode === "socket" ? "bg-emerald-500 text-white" : darkMode ? "bg-white/10" : "bg-black/10"}`}
+          >
+            {netMode === "socket" ? "⚡ Socket" : "Switch to ⚡"}
+          </button>
+        </div>
+
+        {netMode === "socket" ? (
+          <NetworkSession darkMode={darkMode} onExit={onExit} />
+        ) : (
+        <>
         {screen === "setup" ? (
           <div className="flex flex-col gap-3">
             <Tabs value={tab} onValueChange={(v) => { setTab(v as "casual" | "ranked"); setError("") }}>
@@ -1068,6 +1089,8 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
               </div>
             )}
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

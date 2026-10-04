@@ -9,7 +9,7 @@
 //   the existing Firebase battle), resolves collisions / food / power-ups / zone damage and sends
 //   compact GAME_STATE_SYNC deltas. Clients interpolate between those deltas at 60 fps.
 
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2 // v2: LobbyPlayer carries the verified Firebase uid
 
 // ---------------------------------------------------------------------------
 // Directions
@@ -176,6 +176,8 @@ export interface LobbyPlayer {
   /** false while the player is inside the reconnect grace period */
   connected: boolean
   joinedAt: number
+  /** Firebase uid verified from the ID token (null when the server has no verifier configured or the client sent none) */
+  uid: string | null
 }
 
 export interface RoomSnapshot {

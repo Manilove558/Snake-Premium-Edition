@@ -84,6 +84,14 @@ export interface UseSnakeNetworkOptions {
   autoConnect?: boolean
   /** latency probe interval, ms (default 2000) */
   pingIntervalMs?: number
+  /**
+   * Return a fresh Firebase ID token (or null for guests). Called on every
+   * (re)connect so token refresh works. The server verifies it when
+   * FIREBASE_SERVICE_ACCOUNT_JSON is configured and binds the verified uid
+   * to your lobby player (LobbyPlayer.uid) — used for the verified badge
+   * and for ranked settling.
+   */
+  getIdToken?: () => Promise<string | null>
   onPlayerDied?: (e: PlayerDiedEvent) => void
   /** standings include placement / kills / peakMass = the input of calculateMatchRankings() */
   onGameOver?: (r: GameOverPayload) => void
@@ -343,6 +351,14 @@ export function useSnakeNetwork(options: UseSnakeNetworkOptions = {}): UseSnakeN
       reconnectionDelayMax: 5_000,
       randomizationFactor: 0.5,
       timeout: 8_000,
+      // fresh ID token on every (re)connect; guests send none
+      auth: (cb) => {
+        const getIdToken = optsRef.current.getIdToken
+        if (!getIdToken) return cb({})
+        getIdToken()
+          .then((t) => cb(t ? { token: t } : {}))
+          .catch(() => cb({}))
+      },
     })
     socketRef.current = socket
 

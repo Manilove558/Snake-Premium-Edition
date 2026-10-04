@@ -50,6 +50,8 @@ interface RoomPlayer {
   id: string
   /** secret reconnect token */
   token: string
+  /** Firebase uid verified from the ID token (null = unverified / guest) */
+  uid: string | null
   name: string
   color: string
   skinId: string
@@ -96,15 +98,15 @@ export class RoomManager {
   // Requests (each returns the acknowledgement for the client)
   // =========================================================================
 
-  createRoom(socketId: string, raw: unknown, now: number): AckResult<JoinedInfo> {
+  createRoom(socketId: string, raw: unknown, now: number, verifiedUid: string | null = null): AckResult<JoinedInfo> {
     if (this.rooms.size >= NET.MAX_ROOMS) return fail("SERVER_BUSY", "Server is full, try again in a moment")
     const p = asObject(raw)
     this.leaveCurrent(socketId, now)
     const room = this.newRoom(now, this.parseSettings(p.settings, DEFAULT_ROOM_SETTINGS), p.isPublic === true)
-    return this.addPlayer(room, socketId, p, now)
+    return this.addPlayer(room, socketId, p, now, verifiedUid)
   }
 
-  joinRoom(socketId: string, raw: unknown, now: number): AckResult<JoinedInfo> {
+  joinRoom(socketId: string, raw: unknown, now: number, verifiedUid: string | null = null): AckResult<JoinedInfo> {
     const p = asObject(raw)
     const code = normalizeRoomCode(p.code)
     if (!isRoomCode(code)) return fail("BAD_REQUEST", "Room codes are 6 characters")
@@ -113,11 +115,11 @@ export class RoomManager {
     if (room.status !== "lobby") return fail("ROOM_IN_PROGRESS", "That match has already started")
     if (room.players.size >= MODE_RULES[room.settings.mode].maxPlayers) return fail("ROOM_FULL", "Room is full")
     this.leaveCurrent(socketId, now)
-    return this.addPlayer(room, socketId, p, now)
+    return this.addPlayer(room, socketId, p, now, verifiedUid)
   }
 
   /** "Join Global": the fullest open public lobby of that mode, or a brand-new one. */
-  quickMatch(socketId: string, raw: unknown, now: number): AckResult<JoinedInfo> {
+  quickMatch(socketId: string, raw: unknown, now: number, verifiedUid: string | null = null): AckResult<JoinedInfo> {
     const p = asObject(raw)
     const mode: GameMode = isGameMode(p.mode) ? p.mode : "classic"
     this.leaveCurrent(socketId, now)
@@ -127,9 +129,9 @@ export class RoomManager {
       if (r.players.size >= MODE_RULES[mode].maxPlayers) continue
       if (!best || r.players.size > best.players.size) best = r
     }
-    if (best) return this.addPlayer(best, socketId, p, now)
+    if (best) return this.addPlayer(best, socketId, p, now, verifiedUid)
     if (this.rooms.size >= NET.MAX_ROOMS) return fail("SERVER_BUSY", "Server is full, try again in a moment")
-    return this.addPlayer(this.newRoom(now, { ...DEFAULT_ROOM_SETTINGS, mode }, true), socketId, p, now)
+    return this.addPlayer(this.newRoom(now, { ...DEFAULT_ROOM_SETTINGS, mode }, true), socketId, p, now, verifiedUid)
   }
 
   /** Re-attach a new socket to an existing player (page reload, network drop, app resumed). */
@@ -357,7 +359,7 @@ export class RoomManager {
     return false
   }
 
-  private addPlayer(room: Room, socketId: string, raw: Record<string, unknown>, now: number): AckResult<JoinedInfo> {
+  private addPlayer(room: Room, socketId: string, raw: Record<string, unknown>, now: number, verifiedUid: string | null = null): AckResult<JoinedInfo> {
     const color =
       (isPlayerColor(raw.color) && !this.colorTaken(room, raw.color) ? raw.color : undefined) ??
       PLAYER_COLORS.find((c) => !this.colorTaken(room, c)) ??
@@ -365,6 +367,7 @@ export class RoomManager {
     const player: RoomPlayer = {
       id: `p_${randomBytes(6).toString("hex")}`,
       token: randomBytes(16).toString("hex"),
+      uid: verifiedUid,
       name: sanitizeName(raw.name),
       color,
       skinId: sanitizeSkinId(raw.skinId),
@@ -488,6 +491,7 @@ export class RoomManager {
         isHost: p.id === room.hostId,
         connected: p.socketId !== null,
         joinedAt: p.joinedAt,
+        uid: p.uid,
       }))
     return {
       code: room.code,
