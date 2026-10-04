@@ -50,7 +50,14 @@
       "$uid": {
         ".write": "auth != null && auth.uid === $uid",
         ".validate": "newData.hasChildren(['elo', 'wins', 'losses', 'matches'])",
-        "elo": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3000" },
+        // "elo" ab Rank Points (RP) hai. Master 3000+ open-ended hai, isliye upar ki limit sirf sanity ceiling (RP_MAX).
+        "elo": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99999" },
+        // --- v20 ranked fields (sab optional; purane records bina inke bhi valid hain) ---
+        "mmr": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99999" },
+        "protectionGamesLeft": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3 && newData.val() % 1 === 0" },
+        "shieldTier": { ".validate": "newData.isString() && (newData.val() === 'bronze' || newData.val() === 'silver' || newData.val() === 'gold' || newData.val() === 'platinum' || newData.val() === 'diamond' || newData.val() === 'master')" },
+        "lastActiveAt": { ".validate": "newData.isNumber()" },
+        "lastDecayAt": { ".validate": "newData.isNumber()" },
         "wins": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0" },
         "losses": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0" },
         "matches": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0" },

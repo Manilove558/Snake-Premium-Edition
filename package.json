@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "server:dev": "tsx watch server/index.ts",
+    "server:start": "tsx server/index.ts",
+    "server:typecheck": "tsc -p server/tsconfig.json",
+    "test:net": "tsx scripts/net-selftest.ts"
   },
   "dependencies": {
     "@adplorg/capacitor-in-app-purchase": "^2.0.64",
@@ -60,6 +64,8 @@
     "react-hook-form": "^7.54.1",
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.0",
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4",
     "sonner": "^1.7.1",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
@@ -73,6 +79,7 @@
     "jsdom": "^30.1.1",
     "postcss": "^8",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }
