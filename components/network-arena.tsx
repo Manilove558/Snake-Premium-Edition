@@ -16,6 +16,7 @@ import {
   applyMatchResult,
   calculateMatchRankings,
   createRankProfile,
+  RANKED_MIN_PLAYERS,
   toRankedPlayer,
   type RankedPlayer,
 } from "@/lib/ranked"
@@ -98,6 +99,8 @@ export default function NetworkArena({ net, darkMode, controlMode, isRanked, myU
   const [myDelta, setMyDelta] = useState<number | null>(null)
   const settledRef = useRef(false)
   const disarmRef = useRef<(() => Promise<void>) | null>(null)
+  /** Everybody's rating as it was BEFORE the match. Frozen at the countdown so a faster client's write can't change what a slower client computes from. */
+  const preMatchRef = useRef<Record<string, RankProfileBundle> | null>(null)
   const mode = net.config?.mode ?? net.room?.settings.mode ?? "classic"
   const isRoyale = mode === "royale"
 
@@ -168,6 +171,7 @@ export default function NetworkArena({ net, darkMode, controlMode, isRanked, myU
           if (!bundles[u]) bundles[u] = { profile: createRankProfile(u), wins: 0, losses: 0 }
         }
         if (cancelled) return
+        preMatchRef.current = bundles
         const myKey = net.players.find((p) => p.id === net.me!.playerId)?.uid ?? `unverified:${net.me!.playerId}`
         const penalty = lastPlaceRankProfile(bundles, myKey)
         if (cancelled) return
@@ -196,15 +200,24 @@ export default function NetworkArena({ net, darkMode, controlMode, isRanked, myU
     ;(async () => {
       try {
         const standings = net.result!.standings
-        // ranked needs every player verified — otherwise skip honestly
-        const idToUid = new Map(net.players.map((p) => [p.id, p.uid]))
+        // calculateMatchRankings needs at least RANKED_MIN_PLAYERS (3) — otherwise it throws
+        if (standings.length < RANKED_MIN_PLAYERS) {
+          setRankedNote(`Ranked needs ${RANKED_MIN_PLAYERS}+ players — this match did not count.`)
+          return
+        }
+        // The uid comes with the server's standings: a player who left is no longer in net.players,
+        // so looking uids up there made every match with a leaver skip ranked for EVERYONE.
+        const idToUid = new Map(standings.map((s) => [s.id, s.uid]))
         const unverified = standings.some((s) => !idToUid.get(s.id))
         if (unverified) {
           setRankedNote("⚠ Ranked skipped — a player wasn't verified (Google sign-in).")
           return
         }
         const uids = standings.map((s) => idToUid.get(s.id) as string)
-        const bundles = await fetchRankProfiles(uids)
+        // Use the ratings frozen at the countdown. Re-reading now would return opponents who already
+        // settled (their ratings changed) -> every client computes a different match -> zero-sum breaks.
+        const frozen = preMatchRef.current
+        const bundles = frozen && uids.every((u) => frozen[u]) ? frozen : await fetchRankProfiles(uids)
         const players: RankedPlayer[] = standings.map((s) => {
           const uid = idToUid.get(s.id) as string
           return toRankedPlayer(bundles[uid].profile, {
@@ -245,6 +258,7 @@ export default function NetworkArena({ net, darkMode, controlMode, isRanked, myU
 
   const backToLobby = () => {
     settledRef.current = false
+    preMatchRef.current = null
     setRankedRows(null)
     setRankedNote(null)
     setMyDelta(null)

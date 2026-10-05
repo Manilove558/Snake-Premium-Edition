@@ -53,6 +53,9 @@
         // "elo" ab Rank Points (RP) hai. Master 3000+ open-ended hai, isliye upar ki limit sirf sanity ceiling (RP_MAX).
         "elo": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99999" },
         // --- v20 ranked fields (sab optional; purane records bina inke bhi valid hain) ---
+        // v20 writers (lib/ranked-db.ts) also store these two — without them "$other: false" rejected the whole write
+        "rp": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99999" },
+        "gamesPlayed": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0" },
         "mmr": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99999" },
         "protectionGamesLeft": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3 && newData.val() % 1 === 0" },
         "shieldTier": { ".validate": "newData.isString() && (newData.val() === 'bronze' || newData.val() === 'silver' || newData.val() === 'gold' || newData.val() === 'platinum' || newData.val() === 'diamond' || newData.val() === 'master')" },

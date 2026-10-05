@@ -265,7 +265,7 @@ const lastRoom = (w: ReturnType<typeof makeWorld>, sock: string) =>
 {
   const w = makeWorld()
   let now = 10_000
-  const a = w.mgr.createRoom("sA", { name: "  Alice<script> ", color: "#ff5d7a" }, now)
+  const a = w.mgr.createRoom("sA", { name: "  Alice<script> ", color: "#ff5d7a" }, now, "uid-alice")
   assert(a.ok)
   if (!a.ok) throw 0
   assert.strictEqual(a.room.players[0].name, "Alicescript") // < > stripped
@@ -273,7 +273,7 @@ const lastRoom = (w: ReturnType<typeof makeWorld>, sock: string) =>
   assert.strictEqual(a.room.players[0].isHost, true)
 
   // join: colour conflict is resolved, bad code / full room / bad payload are rejected
-  const b = w.mgr.joinRoom("sB", { code: a.code.toLowerCase() + " ", name: "Bob", color: "#ff5d7a" }, now)
+  const b = w.mgr.joinRoom("sB", { code: a.code.toLowerCase() + " ", name: "Bob", color: "#ff5d7a" }, now, "uid-bob")
   assert(b.ok)
   if (!b.ok) throw 0
   assert.notStrictEqual(b.room.players[1].color, "#ff5d7a")
@@ -341,6 +341,8 @@ const lastRoom = (w: ReturnType<typeof makeWorld>, sock: string) =>
   const over = w.sent.filter((s) => s.event === "GAME_OVER").pop()!.payload as import("../shared/snake-protocol").GameOverPayload
   const rowB = over.standings.find((r) => r.name === "Bob")!
   assert(rowB.disconnected && rowB.placement === 2, "leaver is last")
+  assert.strictEqual(rowB.uid, "uid-bob", "leaver keeps his verified uid in the standings (needed to settle ranked)")
+  assert.strictEqual(over.standings.find((r) => r.name === "Alicescript")!.uid, "uid-alice")
   assert.strictEqual(over.winnerId, a.playerId)
 
   // rematch

@@ -61,6 +61,8 @@ const CLASSIC_SPAWNS: readonly { x: number; y: number; dx: number; dy: number }[
 export interface EnginePlayer {
   id: string
   name: string
+  /** verified account id, echoed into the final standings (survives the player leaving the room) */
+  uid?: string | null
 }
 
 export interface EngineOptions {
@@ -84,6 +86,7 @@ export interface TickOutput {
 interface Snake {
   id: string
   name: string
+  uid: string | null
   seg: Point[]
   dir: Dir
   /** buffered turns (max 2) so a quick "up, left" inside one step is not lost */
@@ -472,6 +475,7 @@ export class GameEngine {
       this.snakes.set(p.id, {
         id: p.id,
         name: p.name,
+        uid: p.uid ?? null,
         seg,
         dir,
         queue: [],
@@ -550,6 +554,7 @@ export class GameEngine {
     const standings: StandingRow[] = all
       .map((s) => ({
         id: s.id,
+        uid: s.uid,
         name: s.name,
         placement: s.placement ?? this.snakes.size,
         kills: s.kills,

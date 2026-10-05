@@ -9,7 +9,7 @@
 //   the existing Firebase battle), resolves collisions / food / power-ups / zone damage and sends
 //   compact GAME_STATE_SYNC deltas. Clients interpolate between those deltas at 60 fps.
 
-export const PROTOCOL_VERSION = 2 // v2: LobbyPlayer carries the verified Firebase uid
+export const PROTOCOL_VERSION = 3 // v2: LobbyPlayer carries the verified Firebase uid · v3: StandingRow carries it too
 
 // ---------------------------------------------------------------------------
 // Directions
@@ -306,6 +306,8 @@ export interface PlayerDiedEvent {
  */
 export interface StandingRow {
   id: string
+  /** verified Firebase uid (null = guest / unverified). Lives HERE because a player who left is no longer in the room list. */
+  uid: string | null
   name: string
   placement: number
   kills: number

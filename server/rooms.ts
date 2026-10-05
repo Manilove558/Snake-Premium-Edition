@@ -451,7 +451,7 @@ export class RoomManager {
     room.engine = new GameEngine({
       mode: room.settings.mode,
       settings: room.settings,
-      players: list.map((p) => ({ id: p.id, name: p.name })),
+      players: list.map((p) => ({ id: p.id, name: p.name, uid: p.uid })),
       startAt: room.startsAt,
     })
     const payload: GameStartPayload = {
