@@ -37,7 +37,7 @@ import { installBackGuard, setBackFallback, exitApplication, dispatchBack, backS
 // Left strip on the home screen keeps room for future buttons. Set to false to hide the dashed placeholders.
 const SHOW_FUTURE_STRIP = true
 import InvitePopup from "./invite-popup"
-import { joinRoom, leaveRoom } from "@/lib/multiplayer"
+import { NetProvider, useNet } from "./net-provider"
 import { useDisplayName } from "@/lib/profile-name"
 import { isVip } from "@/lib/store"
 import { CountdownOverlay } from "@/components/countdown-overlay"
@@ -496,7 +496,11 @@ const getRandomSnakeStart = (blocked: { x: number; y: number }[]) => {
   return { segments: INITIAL_SNAKE, direction: DIRECTIONS.RIGHT }
 }
 
-export default function SnakeGame() {
+function SnakeGameInner() {
+  // v23: ONE Socket.io connection for the whole multiplayer flow (lobby + battle), opened only while multiplayer is on screen
+  const { net, ensureConnected } = useNet()
+  const netRef = useRef(net)
+  netRef.current = net
   const [toast, setToast] = useState("")
   const { user } = useAuthUser()
   const [snake, setSnake] = useState(INITIAL_SNAKE)
@@ -549,31 +553,27 @@ export default function SnakeGame() {
   const mpLobbyActionsRef = useRef<LobbyActions | null>(null)
   const profileName = useDisplayName(user)
 
-  // Accept a room invite: leave any current room, join the invited room's lobby.
+  // Leaving multiplayer (any path) closes the room cleanly and the socket: single-player never keeps a connection open.
+  useEffect(() => {
+    if (mpView !== "none") return
+    void (async () => {
+      if (netRef.current.room) await netRef.current.leaveRoom().catch(() => {})
+      netRef.current.disconnect()
+    })()
+  }, [mpView])
+
+  // Accept a room invite: leave any current room, join the invited room's lobby on the game server.
   const handleInviteAccept = async (inv: RoomInvite): Promise<string | null> => {
     const myUid = user?.uid
     if (!myUid) return "Sign in with Google first."
     try {
-      if (mpView !== "none" && mpSession) {
-        try {
-          await leaveRoom(mpSession.code, mpSession.playerId)
-        } catch {}
-        setMpSession(null)
-        setMpView("none")
-      }
-      const res = await joinRoom(inv.roomCode, profileName, myUid, isVip())
-      if ("error" in res) {
-        const msgs: Record<string, string> = {
-          ROOM_NOT_FOUND: "Room not found — it may have closed.",
-          GAME_IN_PROGRESS: "Battle already started — ask the host to invite you to the next one.",
-          ROOM_FULL: "Room is full.",
-          NOT_RANKED: "That room is not a ranked room.",
-          SIGN_IN_REQUIRED: "Sign in with Google to join.",
-        }
-        return msgs[res.error] ?? "Could not join the room."
-      }
+      if (net.room) await net.leaveRoom().catch(() => {})
+      if (!(await ensureConnected())) return net.lastError?.message ?? "Can't reach the game server. Is it running? (npm run server:dev)"
+      const res = await net.joinRoom({ code: inv.roomCode, name: profileName, vip: isVip() })
+      if (!res.ok) return res.message || "Could not join the room."
       await removeRoomInvite(myUid, inv.roomCode)
       setMpSession({ code: inv.roomCode, playerId: res.playerId })
+      setMpMidMatch(false)
       setMpView("lobby")
       setActiveView("MULTIPLAYER")
       return null
@@ -2378,8 +2378,6 @@ export default function SnakeGame() {
               setMpView("battle")
               setActiveView("GAME")
             }}
-            initialCode={mpSession?.code}
-            initialPlayerId={mpSession?.playerId}
             returnedMidMatch={mpMidMatch}
           />
         </div>,
@@ -2387,8 +2385,6 @@ export default function SnakeGame() {
       )}
       {mpView === "battle" && mpSession && (
         <BattleRouter
-          code={mpSession.code}
-          playerId={mpSession.playerId}
           darkMode={darkMode}
           controlMode={controlMode}
           soundEnabled={soundEnabled}
@@ -2429,5 +2425,13 @@ export default function SnakeGame() {
       />
     </div>
     </PanelHostContext.Provider>
+  )
+}
+
+export default function SnakeGame() {
+  return (
+    <NetProvider>
+      <SnakeGameInner />
+    </NetProvider>
   )
 }

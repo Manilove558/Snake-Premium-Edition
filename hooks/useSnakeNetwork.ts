@@ -35,12 +35,14 @@ import {
   type PlayerDiedEvent,
   type PlayerProfile,
   type QuickMatchPayload,
+  type RankedResultPayload,
   type ReconnectPayload,
   type RoomSettings,
   type RoomSnapshot,
   type RoomStatus,
   type ServerToClientEvents,
 } from "@/shared/snake-protocol"
+import { pushGlide } from "@/lib/smooth-move"
 import { applyGameSync, createGameView, type GameView, type SnakeView } from "@/shared/sync-reducer"
 
 // ---------------------------------------------------------------------------
@@ -125,6 +127,8 @@ export interface UseSnakeNetwork {
   /** newest first, max 8 */
   killFeed: PlayerDiedEvent[]
   result: GameOverPayload | null
+  /** v23: the server-computed ranked result (RP / MMR per player). null in casual rooms / until the match is settled */
+  rankedResult: RankedResultPayload | null
   lastError: NetError | null
   clearError: () => void
 
@@ -139,6 +143,8 @@ export interface UseSnakeNetwork {
   startGame: () => Promise<AckResult>
   /** host: back to the lobby after GAME_OVER */
   resetRoom: () => Promise<AckResult>
+  /** "Back to room" during a match: my snake leaves the round (ranked: counted as a leaver) but I stay in the room */
+  forfeitMatch: () => Promise<AckResult>
   /** Send a turn. Returns false if it was filtered locally (not playing, dead, same / opposite direction). */
   sendMove: (dir: Dir) => boolean
 
@@ -213,6 +219,7 @@ export function useSnakeNetwork(options: UseSnakeNetworkOptions = {}): UseSnakeN
   const [gameState, setGameState] = useState<GameSnapshot | null>(null)
   const [killFeed, setKillFeed] = useState<PlayerDiedEvent[]>([])
   const [result, setResult] = useState<GameOverPayload | null>(null)
+  const [rankedResult, setRankedResult] = useState<RankedResultPayload | null>(null)
   const [lastError, setLastError] = useState<NetError | null>(null)
 
   // mutable mirrors for the render loop / event handlers (no re-render needed)
@@ -243,6 +250,7 @@ export function useSnakeNetwork(options: UseSnakeNetworkOptions = {}): UseSnakeN
     setConfig(null)
     setStartsAt(null)
     setResult(null)
+    setRankedResult(null)
     setKillFeed([])
   }, [])
 
@@ -301,7 +309,7 @@ export function useSnakeNetwork(options: UseSnakeNetworkOptions = {}): UseSnakeN
         it = new SnakeInterpolator()
         interpRef.current.set(id, it)
       }
-      it.push(s.cells, now)
+      pushGlide(it, s.cells, now) // a teleport / portal hop snaps instead of gliding across the board
     }
     if (sync.full) for (const id of [...interpRef.current.keys()]) if (!view.snakes.get(id)?.alive) interpRef.current.delete(id)
 
@@ -422,7 +430,11 @@ export function useSnakeNetwork(options: UseSnakeNetworkOptions = {}): UseSnakeN
 
     socket.on("connect_error", (err) => {
       setIsReconnecting(true)
-      reportError({ code: "CONNECT_ERROR", message: err.message || "Could not reach the game server" })
+      // "websocket error" alone says nothing — name the URL and the usual fix
+      reportError({
+        code: "CONNECT_ERROR",
+        message: `Can't reach the game server at ${url} — is it running? (npm run server:dev)${err.message ? ` [${err.message}]` : ""}`,
+      })
     })
     socket.io.on("reconnect_attempt", () => setIsReconnecting(true))
 
@@ -439,6 +451,7 @@ export function useSnakeNetwork(options: UseSnakeNetworkOptions = {}): UseSnakeN
       setConfig(p.config)
       setStartsAt(p.startsAt)
       setResult(null)
+      setRankedResult(null)
       setKillFeed([])
       seqRef.current = 0
       lastDirRef.current = null
@@ -456,6 +469,8 @@ export function useSnakeNetwork(options: UseSnakeNetworkOptions = {}): UseSnakeN
       setResult(r)
       optsRef.current.onGameOver?.(r)
     })
+
+    socket.on("RANKED_RESULT", (r) => setRankedResult(r))
 
     socket.on("NET_NOTICE", (e) => {
       reportError(e)
@@ -514,6 +529,7 @@ export function useSnakeNetwork(options: UseSnakeNetworkOptions = {}): UseSnakeN
   const updateSettings = useCallback((p: Partial<RoomSettings>) => track(request<Empty>((s, done) => s.emit("UPDATE_SETTINGS", p, done))), [request, track])
   const startGame = useCallback(() => track(request<Empty>((s, done) => s.emit("START_GAME", done))), [request, track])
   const resetRoom = useCallback(() => track(request<Empty>((s, done) => s.emit("RESET_ROOM", done))), [request, track])
+  const forfeitMatch = useCallback(() => request<Empty>((s, done) => s.emit("FORFEIT_MATCH", done)), [request])
 
   const sendMove = useCallback((dir: Dir): boolean => {
     const socket = socketRef.current
@@ -584,6 +600,7 @@ export function useSnakeNetwork(options: UseSnakeNetworkOptions = {}): UseSnakeN
     gameState,
     killFeed,
     result,
+    rankedResult,
     lastError,
     clearError,
     createRoom,
@@ -595,6 +612,7 @@ export function useSnakeNetwork(options: UseSnakeNetworkOptions = {}): UseSnakeN
     updateSettings,
     startGame,
     resetRoom,
+    forfeitMatch,
     sendMove,
     gameViewRef: viewRef,
     sampleSnakes,

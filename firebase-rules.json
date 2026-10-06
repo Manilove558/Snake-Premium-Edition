@@ -1,13 +1,14 @@
 {
   "rules": {
-    // Multiplayer rooms (unchanged): open so guests can play together.
+    // v23: rooms live on the Socket.io server, NOT in Firebase. This node is only still used by voice-chat signalling
+    // (rooms/{code}/voice + rooms/{code}/signals, WebRTC handshakes). Open so guests can talk together.
     "rooms": {
       "$code": {
         ".read": true,
         ".write": true
       }
     },
-    // Global matchmaking index (rooms open to random players).
+    // Legacy (v22 and older): global matchmaking index. Unused since v23 (the server does matchmaking); safe to delete.
     "publicLobby": {
       ".read": true,
       ".write": true
@@ -40,15 +41,15 @@
     // ranked/{uid} = { elo, wins, losses, matches, updatedAt }.
     // Public read: the home-screen ranked leaderboard must also work for GUESTS
     // (no Firebase auth). Elo data is leaderboard data — public by design.
-    // Only the owner can write their own record (auth-gated below).
+    // v23: CLIENTS CANNOT WRITE ranked/* any more. The Socket.io game server settles ranked matches and writes
+    // ranked/{uid} with the Firebase Admin SDK, which bypasses these rules. (Admin SDK needs no rule change to keep working.)
     // ".read" sits on "ranked" itself because the leaderboard query (orderByChild('elo')) reads that node.
-    // NOTE: Elo is computed on the client, so a skilled user can still edit their own record.
-    // Real anti-cheat needs Cloud Functions (accepted for now).
+    // Ratings are computed on the server from a snapshot taken at match start, so a client can no longer edit them.
     "ranked": {
       ".read": true,
       ".indexOn": ["elo"],
       "$uid": {
-        ".write": "auth != null && auth.uid === $uid",
+        ".write": false,
         ".validate": "newData.hasChildren(['elo', 'wins', 'losses', 'matches'])",
         // "elo" ab Rank Points (RP) hai. Master 3000+ open-ended hai, isliye upar ki limit sirf sanity ceiling (RP_MAX).
         "elo": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99999" },
@@ -217,15 +218,15 @@
     },
     // ---------------- Room invites + presence ----------------
     // invites/{toUid}/{roomCode}: a room HOST invites a friend. Only the host's
-    // own player entry may create it — verified against rooms/{code} (hostId must
-    // match, and that player entry's uid must be the sender). The invited player
+    // own account may create it (fromUid must be the sender). v23: the room itself lives on the game server,
+    // so rules can no longer look it up in rooms/{code}; the server still checks the code when the invited player joins. The invited player
     // reads it and deletes it on accept / decline. One invite per (player, room);
     // re-inviting refreshes it. The app also prunes invites older than 5 seconds.
     "invites": {
       "$to": {
         ".read": "auth != null && auth.uid === $to",
         "$roomCode": {
-          ".write": "auth != null && ((!newData.exists() && auth.uid === $to) || (newData.exists() && newData.child('fromUid').val() === auth.uid && root.child('rooms').child($roomCode).child('hostId').val() === newData.child('hostPlayerId').val() && root.child('rooms').child($roomCode).child('players').child(newData.child('hostPlayerId').val()).child('uid').val() === auth.uid))",
+          ".write": "auth != null && ((!newData.exists() && auth.uid === $to) || (newData.exists() && newData.child('fromUid').val() === auth.uid)) ",
           ".validate": "!newData.exists() || (newData.hasChildren(['roomCode', 'fromUid', 'fromName', 'hostPlayerId', 'at']) && newData.child('roomCode').val() === $roomCode && newData.child('at').val() > 0)"
         }
       }

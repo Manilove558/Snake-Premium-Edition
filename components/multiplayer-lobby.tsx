@@ -6,25 +6,14 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Users, Copy, Check, LogOut, WifiOff, X, Play, Globe, Plus, Loader2, Settings, UserPlus } from "lucide-react"
 import {
-  createRoom,
-  joinRoom,
-  joinGlobal,
-  setAutoStartAt,
-  claimHost,
-  subscribeServerOffset,
   getRoomSettings,
-  updateRoomSettings,
   GLOBAL_AUTOSTART_MS,
-  leaveRoom,
-  subscribeToRoom,
-  startBattle,
   normalizeRoomCode,
   MAX_MP_PLAYERS,
   BATTLE_MIN_PLAYERS,
   BOT_FILL_TARGET,
   botFillCount,
   isBotPlayer,
-  type MpRoom,
   type MpSettings,
 } from "@/lib/multiplayer"
 import { BOT_DIFFICULTY, BOT_LEVELS } from "@/lib/bot-ai"
@@ -43,7 +32,7 @@ import RankedPanel, { RankedTag } from "./ranked-panel"
 import { isGoogleUser } from "@/lib/ranked-db"
 import { RANKED_MIN_PLAYERS } from "@/lib/ranked"
 import { VipCrown } from "./vip-crown"
-import NetworkSession from "./network-session"
+import { useNet } from "./net-provider"
 
 /** What the home screen's bottom-right action bar needs to know about the room (host-only start, leave) */
 export interface LobbyRoomInfo {
@@ -68,10 +57,8 @@ interface Props {
   actionsRef?: { current: LobbyActions | null }
   onExit: () => void
   onBattleStart: (code: string, playerId: string) => void
-  initialCode?: string
   /** came back via ✕ while the match is still running: do NOT hand over to the battle until the next round (countdown) */
   returnedMidMatch?: boolean
-  initialPlayerId?: string
 }
 
 function Toggle({ on, onChange, darkMode, disabled }: { on: boolean; onChange: (v: boolean) => void; darkMode: boolean; disabled?: boolean }) {
@@ -313,31 +300,15 @@ function SettingsPanel({
   )
 }
 
-const JOIN_ERRORS: Record<string, string> = {
-  ROOM_NOT_FOUND: "Room not found. Check the code and try again.",
-  GAME_IN_PROGRESS: "This room already started its game.",
-  ROOM_FULL: `Room is full (${MAX_MP_PLAYERS} players max).`,
-  NOT_RANKED: "That room is not a ranked room. Use the Casual tab to join it.",
-  SIGN_IN_REQUIRED: "Ranked rooms need a Google sign-in.",
-}
-
-export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onExit, onBattleStart, initialCode, initialPlayerId, returnedMidMatch }: Props) {
-  const [screen, setScreen] = useState<"setup" | "lobby">(initialCode && initialPlayerId ? "lobby" : "setup")
+export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onExit, onBattleStart, returnedMidMatch }: Props) {
+  const { net, mp: room, ensureConnected } = useNet()
   const [name, setName] = useState("")
   const [joinCode, setJoinCode] = useState("")
-  const [code, setCode] = useState(initialCode ?? "")
-  const [playerId, setPlayerId] = useState(initialPlayerId ?? "")
-  const [room, setRoom] = useState<MpRoom | null>(null)
   const [loading, setLoading] = useState(false)
   const [globalLoading, setGlobalLoading] = useState(false)
-  const [serverOffset, setServerOffset] = useState(0)
   const [now, setNow] = useState(() => Date.now())
-  const autoStartingRef = useRef(false)
-  const lastPlayerCountRef = useRef<number | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [tab, setTab] = useState<"casual" | "ranked">("casual")
-  /** "socket" = the new Socket.io path (runs next to Firebase, nothing replaced) */
-  const [netMode, setNetMode] = useState<"firebase" | "socket">("firebase")
   const { user: authUser } = useAuthUser()
   const st = useStore()
   const myUid = authUser?.uid ?? null
@@ -347,6 +318,10 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
   const playerName = (signedIn ? profileName : name).trim().slice(0, 16)
   const [error, setError] = useState("")
   const [copied, setCopied] = useState(false)
+  // The room lives on the game server: "in a room" = the socket hook has one
+  const code = net.room?.code ?? ""
+  const playerId = net.me?.playerId ?? ""
+  const screen: "setup" | "lobby" = net.room ? "lobby" : "setup"
   // Room invites (host only): friends list with online/offline status
   const { friends } = useFriends()
   const friendUids = Object.keys(friends)
@@ -381,6 +356,7 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
   const leavingRef = useRef(false)
   const battleStartedRef = useRef(false)
   const waitNextRoundRef = useRef(!!returnedMidMatch)
+  const wasInRoomRef = useRef(false)
   const onBattleStartRef = useRef(onBattleStart)
   onBattleStartRef.current = onBattleStart
 
@@ -399,44 +375,47 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
     }
   }, [])
 
-  // Live room subscription while in the lobby
+  // Opening the multiplayer screen opens the socket (and re-attaches to a running room after a reload)
   useEffect(() => {
-    if (screen !== "lobby" || !code) return
-    const unsub = subscribeToRoom(code, (r) => {
-      if (r === null && !leavingRef.current) {
-        // Room was deleted (e.g. host left and nobody remained)
-        setError("Room was closed.")
-        resetToSetup()
-        return
-      }
-      setRoom(r)
-      // came back mid-match: sit in the room until the match ends and a NEW round starts (or the room returns to lobby)
-      if (r && (r.status === "lobby" || r.status === "countdown")) waitNextRoundRef.current = false
-      // Battle started -> hand over to the battle view (once)
-      if (r && !waitNextRoundRef.current && (r.status === "countdown" || r.status === "playing" || r.status === "ended") && !battleStartedRef.current) {
-        battleStartedRef.current = true
-        onBattleStartRef.current(code, playerId)
-      }
-    })
-    return unsub
+    net.connect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, code])
+  }, [])
+
+  // Room status -> hand over to the battle view; losing the room unexpectedly -> back to the setup screen
+  const status = room?.status ?? null
+  useEffect(() => {
+    if (!room) {
+      if (wasInRoomRef.current && !leavingRef.current) setError("The room was closed or you got disconnected from it.")
+      wasInRoomRef.current = false
+      battleStartedRef.current = false
+      return
+    }
+    wasInRoomRef.current = true
+    // came back mid-match: sit in the room until the match ends and a NEW round starts (or the room returns to lobby)
+    if (room.status === "lobby" || room.status === "countdown") waitNextRoundRef.current = false
+    // Battle started -> hand over to the battle view (once per round)
+    if (!waitNextRoundRef.current && (room.status === "countdown" || room.status === "playing" || room.status === "ended") && !battleStartedRef.current) {
+      battleStartedRef.current = true
+      onBattleStartRef.current(room.code, playerId)
+    }
+    if (room.status === "lobby") battleStartedRef.current = false
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, !!room])
 
   const players = room ? Object.values(room.players ?? {}).sort((a, b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0)) : []
   const isHost = !!room && room.hostId === playerId
   const isGlobal = !!room?.isPublic
-  // Ranked Elo needs RANKED_MIN_PLAYERS, so a ranked global room waits for that many before its countdown starts
   const settings = getRoomSettings(room)
   const isRoyale = settings.mode === "royale"
-  // Battle Royale needs BR_MIN_PLAYERS (4); classic needs 2; ranked Elo needs RANKED_MIN_PLAYERS
-  // With "Fill empty slots" on, one human is enough: bots top the room up when the battle starts
+  // The SERVER decides how many players a room needs (ranked 3+, royale 4+, classic 2, or 1 when bots fill the room)
   const botsOn = settings.bots && !room?.isRanked
   const humanCount = players.filter((p) => !isBotPlayer(p)).length
-  const botsToJoin = botsOn ? botFillCount(settings.mode, humanCount) : 0
-  const startMin = botsOn ? 1 : isRoyale ? BR_MIN_PLAYERS : BATTLE_MIN_PLAYERS
-  const minToStart = botsOn ? 1 : isRoyale ? BR_MIN_PLAYERS : room?.isRanked ? Math.max(BATTLE_MIN_PLAYERS, RANKED_MIN_PLAYERS) : BATTLE_MIN_PLAYERS
+  const botsToJoin = botsOn && room?.status === "lobby" ? botFillCount(settings.mode, humanCount) : 0
+  const minToStart = net.room?.minPlayers ?? BATTLE_MIN_PLAYERS
+  const startMin = minToStart
   const autoStartAt = room?.autoStartAt ?? null
-  const secondsLeft = autoStartAt ? Math.max(0, Math.ceil((autoStartAt - (now + serverOffset)) / 1000)) : null
+  const secondsLeft = autoStartAt ? Math.max(0, Math.ceil((autoStartAt - net.getServerTime()) / 1000)) : null
+  void now
 
   // Share room state + actions with the bottom-right action bar (Start / Leave Room live there too)
   const canStartNow = screen === "lobby" && isHost && !loading && players.length >= startMin && (!room?.status || room.status === "lobby")
@@ -461,73 +440,19 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
 
   const handleSettingsChange = (patch: Partial<MpSettings>) => {
     if (!isHost || !code) return
-    // Ranked rules are fixed: teleport + avoid-collision stay ON no matter what the host taps
-    if (room?.isRanked) patch = { ...patch, teleport: true, avoidCollision: true, mode: "classic" }
-    updateRoomSettings(code, patch).catch(() => setError("Could not save settings. Check your connection."))
+    // Ranked rules are fixed (the server enforces them too): teleport + avoid-collision ON, classic, no bots
+    if (room?.isRanked) patch = { ...patch, teleport: true, avoidCollision: true, mode: "classic", bots: false }
+    void net.updateSettings(patch).then((r) => {
+      if (!r.ok) setError(r.message || "Could not save settings. Check your connection.")
+    })
   }
 
-  // Server clock offset so every player sees the same global countdown
-  useEffect(() => {
-    if (screen !== "lobby") return
-    return subscribeServerOffset(setServerOffset)
-  }, [screen])
-
-  // If the host disappeared, the oldest remaining player becomes host
-  useEffect(() => {
-    if (!room || room.status !== "lobby" || players.length === 0) return
-    if (players.some((p) => p.id === room.hostId)) return
-    if (players[0].id === playerId) claimHost(code, playerId).catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [room, playerId, code])
-
-  // Host of a global room: start / cancel the shared auto-start timer
-  useEffect(() => {
-    if (!room || !room.isPublic || room.status !== "lobby" || !isHost) return
-    const n = players.length
-    const prev = lastPlayerCountRef.current
-    lastPlayerCountRef.current = n
-    const someoneJoined = prev !== null && n > prev
-    if (n >= minToStart && (!room.autoStartAt || someoneJoined)) {
-      // first time 2 players are here, or a new player joined -> (re)start the full countdown
-      setAutoStartAt(code, Date.now() + serverOffset + GLOBAL_AUTOSTART_MS).catch(() => {})
-    } else if (n < minToStart && room.autoStartAt) {
-      setAutoStartAt(code, null).catch(() => {})
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [room, isHost, players.length])
-
-  // Tick for the countdown display
+  // Tick for the global auto-start countdown display (the SERVER starts the match, the client only shows the timer)
   useEffect(() => {
     if (!autoStartAt) return
     const id = setInterval(() => setNow(Date.now()), 250)
     return () => clearInterval(id)
   }, [autoStartAt])
-
-  // Host launches the battle when the global countdown hits zero
-  useEffect(() => {
-    if (!isHost || !room || room.status !== "lobby" || !autoStartAt) return
-    if (now + serverOffset < autoStartAt || autoStartingRef.current) return
-    if (players.length < minToStart) return
-    autoStartingRef.current = true
-    startBattle(code).catch(() => {
-      autoStartingRef.current = false
-      setAutoStartAt(code, null).catch(() => {})
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [now, isHost, room, autoStartAt])
-
-  const resetToSetup = () => {
-    setScreen("setup")
-    setCode("")
-    setPlayerId("")
-    setRoom(null)
-    setJoinCode("")
-    setShowInviteModal(false)
-    leavingRef.current = false
-    battleStartedRef.current = false
-    autoStartingRef.current = false
-    lastPlayerCountRef.current = null
-  }
 
   const saveName = (n: string) => {
     try {
@@ -535,166 +460,141 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
     } catch {}
   }
 
-  const handleCreate = async () => {
-    if (!online) return setError("You are offline. Connect to the internet to play multiplayer.")
-    if (!playerName) return setError("Enter your name first.")
-    setLoading(true)
+  /** Common start of every "enter a room" action: online check, name check, open the socket. */
+  const prepare = async (opts: { ranked?: boolean } = {}): Promise<boolean> => {
+    if (!online) return fail("You are offline. Connect to the internet to play multiplayer.")
+    if (opts.ranked && !isGoogleUser(authUser)) return fail("Sign in with Google to play ranked.")
+    if (!playerName) return fail("Enter your name first.")
     setError("")
+    net.clearError()
+    saveName(playerName)
+    const connected = await ensureConnected()
+    if (!connected) {
+      // the hook already wrote a clear message ("Can't reach the game server … is it running?")
+      return fail(net.lastError?.message ?? "Can't reach the game server. Is it running? (npm run server:dev)")
+    }
+    return true
+  }
+  const fail = (msg: string): false => {
+    setError(msg)
+    return false
+  }
+
+  const handleCreate = async () => {
+    setLoading(true)
     try {
-      saveName(playerName)
-      const { code: newCode, playerId: pid } = await createRoom(playerName, false, myUid, isVip())
-      setCode(newCode)
-      setPlayerId(pid)
-      setScreen("lobby")
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not create room.")
+      if (!(await prepare())) return
+      const r = await net.createRoom({ name: playerName, vip: isVip(st), settings: { ranked: false } })
+      if (!r.ok) setError(r.message)
     } finally {
       setLoading(false)
     }
   }
 
   const handleJoinGlobal = async () => {
-    if (!online) return setError("You are offline. Connect to the internet to play multiplayer.")
-    if (!playerName) return setError("Enter your name first.")
     setGlobalLoading(true)
-    setError("")
     try {
-      saveName(playerName)
-      const { code: gCode, playerId: pid } = await joinGlobal(playerName, myUid, isVip())
-      setCode(gCode)
-      setPlayerId(pid)
-      setScreen("lobby")
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not join a global match.")
+      if (!(await prepare())) return
+      const r = await net.quickMatch({ name: playerName, vip: isVip(st), mode: "classic" })
+      if (!r.ok) setError(r.message)
     } finally {
       setGlobalLoading(false)
     }
   }
 
   const handleJoin = async () => {
-    if (!online) return setError("You are offline. Connect to the internet to play multiplayer.")
-    if (!playerName) return setError("Enter your name first.")
     const clean = normalizeRoomCode(joinCode)
     if (clean.length !== 6) return setError("Room code is 6 characters.")
     setLoading(true)
-    setError("")
     try {
-      saveName(playerName)
-      const res = await joinRoom(clean, playerName, myUid, isVip())
-      if ("error" in res) {
-        setError(JOIN_ERRORS[res.error] ?? "Could not join room.")
-        return
-      }
-      setCode(clean)
-      setPlayerId(res.playerId)
-      setScreen("lobby")
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not join room.")
+      if (!(await prepare())) return
+      const r = await net.joinRoom({ code: clean, name: playerName, vip: isVip(st) })
+      if (!r.ok) setError(r.message)
     } finally {
       setLoading(false)
     }
   }
 
-  // ---- Ranked rooms (same flow as Create / Join, but the room is marked ranked) ----
+  // ---- Ranked rooms: the host picks "ranked" when CREATING the room; it is all-or-nothing and fixed afterwards ----
   const handleCreateRanked = async () => {
-    if (!online) return setError("You are offline. Connect to the internet to play multiplayer.")
-    if (!isGoogleUser(authUser)) return setError("Sign in with Google to play ranked.")
-    if (!playerName) return setError("Enter your name first.")
     setLoading(true)
-    setError("")
     try {
-      const { code: newCode, playerId: pid } = await createRoom(playerName, false, myUid, isVip(), true)
-      setCode(newCode)
-      setPlayerId(pid)
-      setScreen("lobby")
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not create room.")
+      if (!(await prepare({ ranked: true }))) return
+      const r = await net.createRoom({ name: playerName, vip: isVip(st), settings: { ranked: true } })
+      if (!r.ok) setError(r.message)
     } finally {
       setLoading(false)
     }
   }
 
   const handleJoinRankedGlobal = async () => {
-    if (!online) return setError("You are offline. Connect to the internet to play multiplayer.")
-    if (!isGoogleUser(authUser)) return setError("Sign in with Google to play ranked.")
-    if (!playerName) return setError("Enter your name first.")
     setGlobalLoading(true)
-    setError("")
     try {
-      const { code: gCode, playerId: pid } = await joinGlobal(playerName, myUid, isVip(), true)
-      setCode(gCode)
-      setPlayerId(pid)
-      setScreen("lobby")
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not join a global ranked match.")
+      if (!(await prepare({ ranked: true }))) return
+      const r = await net.quickMatch({ name: playerName, vip: isVip(st), ranked: true })
+      if (!r.ok) setError(r.message)
     } finally {
       setGlobalLoading(false)
     }
   }
 
   const handleJoinRanked = async (rawCode: string) => {
-    if (!online) return setError("You are offline. Connect to the internet to play multiplayer.")
-    if (!isGoogleUser(authUser)) return setError("Sign in with Google to play ranked.")
-    if (!playerName) return setError("Enter your name first.")
     const clean = normalizeRoomCode(rawCode)
     if (clean.length !== 6) return setError("Room code is 6 characters.")
     setLoading(true)
-    setError("")
     try {
-      const res = await joinRoom(clean, playerName, myUid, isVip(), true)
-      if ("error" in res) {
-        setError(JOIN_ERRORS[res.error] ?? "Could not join room.")
-        return
-      }
-      setCode(clean)
-      setPlayerId(res.playerId)
-      setScreen("lobby")
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not join room.")
+      if (!(await prepare({ ranked: true }))) return
+      const r = await net.joinRoom({ code: clean, name: playerName, vip: isVip(st), expectRanked: true })
+      if (!r.ok) setError(r.message)
     } finally {
       setLoading(false)
     }
   }
 
+  const resetToSetup = () => {
+    setJoinCode("")
+    setShowInviteModal(false)
+    battleStartedRef.current = false
+    wasInRoomRef.current = false
+  }
+
   const handleLeave = async () => {
     leavingRef.current = true
     try {
-      if (code && playerId) {
-        destroyVoiceManager(code, playerId)
-        await leaveRoom(code, playerId)
-      }
+      if (code && playerId) destroyVoiceManager(code, playerId)
+      await net.leaveRoom()
     } catch {}
     resetToSetup()
+    leavingRef.current = false
   }
 
   // Leave the room and go all the way back to the default single-player view
   const handleLeaveAndExit = async () => {
     leavingRef.current = true
     try {
-      if (code && playerId) {
-        destroyVoiceManager(code, playerId)
-        await leaveRoom(code, playerId)
-      }
+      if (code && playerId) destroyVoiceManager(code, playerId)
+      await net.leaveRoom()
     } catch {}
     resetToSetup()
     onExit()
+    leavingRef.current = false
   }
 
   const handleStartBattle = async () => {
-    // Only the host may start the match (UI is disabled for everybody else, this is the safety net)
+    // Only the host may start the match (UI is disabled for everybody else; the server checks it again)
     if (!isHost || players.length < startMin) return
     if (room?.status && room.status !== "lobby") return // a match is still running (e.g. host came back mid-match)
     setLoading(true)
     setError("")
     try {
-      await startBattle(code)
-      // Room subscription will flip to the battle view on status change
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not start battle.")
+      const r = await net.startGame()
+      if (!r.ok) setError(r.message)
+      // the room status flips to "countdown" -> the effect above hands over to the battle view
     } finally {
       setLoading(false)
     }
   }
+
 
   const copyCode = async () => {
     try {
@@ -835,24 +735,14 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
           <div className="text-xs mb-4 px-3 py-2 rounded-xl bg-red-500/15 text-red-600 dark:text-red-400">{error}</div>
         )}
 
-        {/* connection path: Firebase (classic) or the new Socket.io server */}
-        <div className={`flex items-center justify-between mb-3 px-3 py-2 rounded-xl border text-xs ${darkMode ? "border-white/10 bg-white/5" : "border-black/10 bg-black/5"}`}>
-          <span className={darkMode ? "text-white/70" : "text-black/70"}>
-            {netMode === "socket" ? "⚡ Socket.io server (low latency)" : "🔥 Firebase (classic)"}
-          </span>
-          <button
-            type="button"
-            onClick={() => setNetMode(netMode === "socket" ? "firebase" : "socket")}
-            className={`px-3 py-1 rounded-lg font-semibold ${netMode === "socket" ? "bg-emerald-500 text-white" : darkMode ? "bg-white/10" : "bg-black/10"}`}
-          >
-            {netMode === "socket" ? "⚡ Socket" : "Switch to ⚡"}
-          </button>
-        </div>
+        {/* game server status: only shown when something is wrong (the classic layout stays untouched) */}
+        {!net.isConnected && (net.isReconnecting || net.lastError) && (
+          <div className="flex items-center gap-2 text-xs mb-4 px-3 py-2 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400">
+            <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+            <span className="min-w-0 break-words">{net.lastError?.message ?? "Connecting to the game server…"}</span>
+          </div>
+        )}
 
-        {netMode === "socket" ? (
-          <NetworkSession darkMode={darkMode} onExit={onExit} />
-        ) : (
-        <>
         {screen === "setup" ? (
           <div className="flex flex-col gap-3">
             <Tabs value={tab} onValueChange={(v) => { setTab(v as "casual" | "ranked"); setError("") }}>
@@ -956,11 +846,11 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
                 <RankedTag />
                 {players.length < RANKED_MIN_PLAYERS ? (
                   <p className="text-center text-[11px] text-amber-600 dark:text-amber-400">
-                    Ranked needs {RANKED_MIN_PLAYERS}+ players — with fewer, this match will not change anyone&apos;s Elo
+                    Ranked needs {RANKED_MIN_PLAYERS}+ players
                   </p>
                 ) : (
                   <p className={`text-center text-[11px] ${darkMode ? "text-white/50" : "text-black/50"}`}>
-                    Elo counts if everyone is signed in with a different Google account
+                    RP counts — everybody in this room must be signed in with a different Google account
                   </p>
                 )}
               </div>
@@ -1089,8 +979,6 @@ export default function MultiplayerLobby({ darkMode, onRoomInfo, actionsRef, onE
               </div>
             )}
           </div>
-        )}
-        </>
         )}
       </div>
     </div>

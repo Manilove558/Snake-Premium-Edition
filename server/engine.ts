@@ -26,7 +26,8 @@ import {
   ZONE_TAIL_DAMAGE,
 } from "../lib/br/constants"
 import { computeSpawns } from "../lib/br/spawns"
-import { buildZoneBoxes, getZoneState, isInsideZone, mulberry32, randomCellInBox, type ZoneBox } from "../lib/br/zone"
+import { buildZoneBoxes, getZoneState, isInsideZone, mulberry32, randomCellInBox, type ZoneBox, type ZoneState } from "../lib/br/zone"
+import type { BotWorld } from "../lib/bot-ai"
 import {
   DIR_VECTOR,
   NET,
@@ -63,6 +64,8 @@ export interface EnginePlayer {
   name: string
   /** verified account id, echoed into the final standings (survives the player leaving the room) */
   uid?: string | null
+  /** AI bot (server/bots.ts): flagged in the standings, never rated */
+  bot?: boolean
 }
 
 export interface EngineOptions {
@@ -87,6 +90,7 @@ interface Snake {
   id: string
   name: string
   uid: string | null
+  bot: boolean
   seg: Point[]
   dir: Dir
   /** buffered turns (max 2) so a quick "up, left" inside one step is not lost */
@@ -242,6 +246,53 @@ export class GameEngine {
       aliveCount: this.aliveCount(),
     }
   }
+
+  // -------------------------------------------------------------------------
+  // Bot support (server/bots.ts) — read-only views, the engine never trusts a bot more than a human
+  // -------------------------------------------------------------------------
+
+  /** Ids of the alive snakes that will MOVE on the next tick: a bot decides its turn right before that. */
+  dueToMove(): string[] {
+    const out: string[] = []
+    for (const s of this.snakes.values()) if (s.alive && s.cooldown <= 1) out.push(s.id)
+    return out
+  }
+
+  /** Head-first cells + heading of one alive snake (null when dead / unknown). */
+  snakeCells(id: string): { seg: Point[]; dir: Dir } | null {
+    const s = this.snakes.get(id)
+    return s && s.alive ? { seg: s.seg.map((c) => ({ x: c.x, y: c.y })), dir: s.dir } : null
+  }
+
+  /** Shrinking-zone state at server time `now` (null in classic). */
+  zoneAt(now: number): ZoneState | null {
+    return this.zoneBoxes ? getZoneState(this.zoneBoxes, now - this.startAt) : null
+  }
+
+  /** The world as lib/bot-ai.ts wants to see it (every alive snake, humans + bots). */
+  botWorld(now: number): BotWorld {
+    if (!this.botStatic) {
+      this.botStatic = {
+        walls: new Set(this.config.walls.map((w) => `${w.x},${w.y}`)),
+        portals: this.config.portals.map(([a, b]) => [{ x: a.x, y: a.y }, { x: b.x, y: b.y }] as const),
+      }
+    }
+    const zone = this.zoneAt(now)
+    return {
+      width: this.cols,
+      height: this.rows,
+      wrap: this.config.teleport,
+      walls: this.botStatic.walls,
+      portals: this.botStatic.portals,
+      passThrough: this.config.avoidCollision,
+      foods: [...this.foods.values()].map((f) => ({ x: f.x, y: f.y })),
+      snakes: [...this.snakes.values()]
+        .filter((s) => s.alive)
+        .map((s) => ({ id: s.id, seg: s.seg, dx: DIR_VECTOR[s.dir].dx, dy: DIR_VECTOR[s.dir].dy })),
+      zone: zone ? { box: zone.box, target: zone.target, shrinking: zone.shrinking, warning: zone.warning } : null,
+    }
+  }
+  private botStatic: { walls: Set<string>; portals: readonly (readonly [Point, Point])[] } | null = null
 
   /** Read-only view for tests / debugging. */
   inspect(): { snakes: ReadonlyMap<string, Readonly<Snake>>; foods: ReadonlyMap<number, Readonly<Food>> } {
@@ -476,6 +527,7 @@ export class GameEngine {
         id: p.id,
         name: p.name,
         uid: p.uid ?? null,
+        bot: p.bot === true,
         seg,
         dir,
         queue: [],
@@ -562,6 +614,7 @@ export class GameEngine {
         peakMass: s.peak,
         survivedMs: Math.max(0, (s.diedAt ?? now) - this.startAt),
         disconnected: s.disconnected,
+        bot: s.bot,
       }))
       .sort((a, b) => a.placement - b.placement || b.kills - a.kills || b.score - a.score)
 

@@ -9,7 +9,11 @@
 //   the existing Firebase battle), resolves collisions / food / power-ups / zone damage and sends
 //   compact GAME_STATE_SYNC deltas. Clients interpolate between those deltas at 60 fps.
 
-export const PROTOCOL_VERSION = 3 // v2: LobbyPlayer carries the verified Firebase uid · v3: StandingRow carries it too
+export const PROTOCOL_VERSION = 4
+// v2: LobbyPlayer carries the verified Firebase uid · v3: StandingRow carries it too
+// v4: Socket.io is the ONLY multiplayer path. Room-level `ranked` (all-or-nothing, server settles RP/MMR and writes
+//     ranked/{uid} with the Admin SDK), server-side bots (`bots` / `botLevel`, LobbyPlayer.bot), `grid` setting,
+//     LobbyPlayer.vip, FORFEIT_MATCH, RANKED_RESULT, QUICK_MATCH/JOIN_ROOM ranked flags, new error codes.
 
 // ---------------------------------------------------------------------------
 // Directions
@@ -82,10 +86,28 @@ export const NET = {
 
 export type GameMode = "classic" | "royale"
 
+/** Difficulty of a server-side bot (same ids as lib/bot-ai.ts). */
+export type BotLevel = "easy" | "medium" | "hard"
+export const BOT_LEVELS: readonly BotLevel[] = ["easy", "medium", "hard"]
+export const DEFAULT_BOT_LEVEL: BotLevel = "medium"
+export const isBotLevel = (v: unknown): v is BotLevel => v === "easy" || v === "medium" || v === "hard"
+
+/** Ranked needs this many HUMAN players (same value as RANKED_MIN_PLAYERS in lib/ranked.ts). */
+export const RANKED_MIN_HUMANS = 3
+/** The message shown for a ranked room with too few players. */
+export const RANKED_MIN_PLAYERS_MESSAGE = `Ranked needs ${RANKED_MIN_HUMANS}+ players`
+
 export const MODE_RULES: Readonly<Record<GameMode, { minPlayers: number; maxPlayers: number }>> = {
   classic: { minPlayers: 2, maxPlayers: 8 }, // BATTLE_MIN_PLAYERS / MAX_MP_PLAYERS
   royale: { minPlayers: 4, maxPlayers: 8 }, // BR_MIN_PLAYERS / BR_MAX_PLAYERS
 }
+
+/** Humans + bots the server tops a room up to when "Fill empty slots" is on (same numbers as BOT_FILL_TARGET in lib/multiplayer.ts). */
+export const BOT_FILL_TARGET: Readonly<Record<GameMode, number>> = { classic: 4, royale: 8 }
+
+/** How many bots would join if the match started now with `humans` real players. */
+export const botFillCount = (mode: GameMode, humans: number): number =>
+  Math.max(0, Math.min(MODE_RULES[mode].maxPlayers, BOT_FILL_TARGET[mode]) - humans)
 
 /** Same palette (and order) as MP_PLAYER_COLORS in lib/multiplayer.ts. */
 export const PLAYER_COLORS: readonly string[] = [
@@ -120,6 +142,16 @@ export type NetErrorCode =
   | "BAD_SESSION"
   | "SERVER_BUSY"
   | "SESSION_REPLACED"
+  /** ranked needs a verified (Google-signed-in) player */
+  | "NOT_VERIFIED"
+  /** join-by-code from the Ranked tab, but the room is a casual one */
+  | "NOT_RANKED"
+  /** a ranked room broke a ranked rule (3+ players, no bots, one account per seat …) */
+  | "RANKED_RULES"
+  /** this server has no Firebase Admin credentials, so it cannot settle ranked matches */
+  | "RANKED_UNAVAILABLE"
+  /** NET_NOTICE: the ID token sent with the handshake was rejected (you play as a guest) */
+  | "BAD_TOKEN"
   | "INTERNAL"
   /** client-side only: the socket could not connect */
   | "CONNECT_ERROR"
@@ -146,6 +178,19 @@ export interface RoomSettings {
   teleport: boolean
   /** snakes pass through each other (nobody dies from a snake-vs-snake collision) */
   avoidCollision: boolean
+  /** show grid lines in the arena (purely visual, relayed to every client) */
+  grid: boolean
+  /** fill empty slots with server-side bots when the match starts (never in a ranked room) */
+  bots: boolean
+  /** difficulty of those bots */
+  botLevel: BotLevel
+  /**
+   * ALL-OR-NOTHING ranked room. Chosen by the host when the room is created and never changed afterwards.
+   * true  -> everybody in the room is rated; the SERVER settles RP/MMR and writes ranked/{uid}.
+   *          Fixed rules: classic mode, teleport ON, no snake collision, random map, no bots, 3+ verified players.
+   * false -> casual: nothing is rated.
+   */
+  ranked: boolean
 }
 
 export const DEFAULT_ROOM_SETTINGS: Readonly<RoomSettings> = {
@@ -153,6 +198,10 @@ export const DEFAULT_ROOM_SETTINGS: Readonly<RoomSettings> = {
   map: "classic",
   teleport: false,
   avoidCollision: false,
+  grid: true,
+  bots: true,
+  botLevel: DEFAULT_BOT_LEVEL,
+  ranked: false,
 }
 
 export type RoomStatus = "lobby" | "countdown" | "playing" | "ended"
@@ -164,6 +213,8 @@ export interface PlayerProfile {
   color?: string
   /** cosmetic skin id from the store (e.g. "skin_rainbow"); the server only relays it */
   skinId?: string
+  /** VIP Pass holder (crown next to the name). Cosmetic only — the server just relays it. */
+  vip?: boolean
 }
 
 export interface LobbyPlayer {
@@ -178,6 +229,12 @@ export interface LobbyPlayer {
   joinedAt: number
   /** Firebase uid verified from the ID token (null when the server has no verifier configured or the client sent none) */
   uid: string | null
+  /** VIP crown (cosmetic, relayed from the player's own profile) */
+  vip: boolean
+  /** true = AI bot driven by the server (shown with a [BOT] tag). Bots join when the match starts and leave on rematch. */
+  bot: boolean
+  /** difficulty of this bot (null for humans) */
+  botLevel: BotLevel | null
 }
 
 export interface RoomSnapshot {
@@ -316,6 +373,8 @@ export interface StandingRow {
   survivedMs: number
   /** true = left / dropped out: ranked systems should treat this player as last place */
   disconnected: boolean
+  /** true = AI bot (never rated) */
+  bot: boolean
 }
 
 export interface GameOverPayload {
@@ -337,10 +396,42 @@ export interface CreateRoomPayload extends PlayerProfile {
 
 export interface JoinRoomPayload extends PlayerProfile {
   code: string
+  /** true = "Join ranked room" from the Ranked tab: refuse a casual room with NOT_RANKED */
+  expectRanked?: boolean
 }
 
 export interface QuickMatchPayload extends PlayerProfile {
   mode?: GameMode
+  /** true = "Join Global" inside the Ranked tab: only ranked public lobbies, verified players only */
+  ranked?: boolean
+}
+
+/** One row of the server-settled ranked result. */
+export interface RankedResultRow {
+  /** lobby player id (matches StandingRow.id) */
+  id: string
+  uid: string
+  name: string
+  placement: number
+  /** true = left / dropped out and was settled as last place */
+  leaver: boolean
+  rpBefore: number
+  rpAfter: number
+  rpDelta: number
+  mmrDelta: number
+  tier: string
+  promoted: boolean
+  demoted: boolean
+}
+
+/**
+ * Sent once, after the server has computed (and tried to save) the ranked result.
+ * `saved: false` means the math is shown but the database write failed (see `note`).
+ */
+export interface RankedResultPayload {
+  rows: RankedResultRow[]
+  saved: boolean
+  note: string | null
 }
 
 export interface ReconnectPayload {
@@ -368,6 +459,11 @@ export interface ClientToServerEvents {
   START_GAME: (ack: (r: AckResult) => void) => void
   /** host only, after GAME_OVER: back to the lobby for a rematch */
   RESET_ROOM: (ack: (r: AckResult) => void) => void
+  /**
+   * Leave the RUNNING match but stay in the room ("Back to room"): my snake is removed and counts as last place
+   * (settled as a leaver in a ranked room). Allowed in countdown / playing; harmless otherwise.
+   */
+  FORFEIT_MATCH: (ack: (r: AckResult) => void) => void
   /** fire-and-forget, no ack (hot path) */
   MOVE_INPUT: (p: MoveInputPayload) => void
   /** latency probe: the server answers with its clock (ms) */
@@ -381,6 +477,8 @@ export interface ServerToClientEvents {
   GAME_STATE_SYNC: (s: GameStateSync) => void
   PLAYER_DIED: (e: PlayerDiedEvent) => void
   GAME_OVER: (r: GameOverPayload) => void
+  /** ranked rooms only: RP/MMR as calculated and saved BY THE SERVER, sent after GAME_OVER */
+  RANKED_RESULT: (r: RankedResultPayload) => void
   /** e.g. SESSION_REPLACED when the same account reconnects from another tab */
   NET_NOTICE: (e: NetError) => void
 }

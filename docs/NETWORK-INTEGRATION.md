@@ -1,3 +1,8 @@
+> **v23 update:** this document describes the original (v21/v22) integration. Since v23 the Socket.io server is the ONLY
+> multiplayer path: the Firebase-vs-Socket toggle, `lib/multiplayer.ts`' Firebase code, `multiplayer-battle.tsx`,
+> `royale-battle.tsx` and the host-browser bot runner are gone. Ranked, bots and matchmaking now run on the server —
+> see `CHANGES-v23.md`. Sections below that talk about running "next to" Firebase are historical.
+
 # Real-time network layer (Socket.io) — setup & integration
 
 Server-authoritative multiplayer that runs **next to** the existing Firebase battle (nothing was replaced).

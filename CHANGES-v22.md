@@ -15,3 +15,8 @@ Test: `npm run test:net` aur `npx tsx scripts/ranked-selftest.ts` dono pass (net
 - Firebase-mode battle (`multiplayer-battle.tsx`) abhi purana `computeEloChanges` use karta hai.
 - Server `initAuth()` async hai: bahut jaldi aane wale connections unverified ho sakte hain; kharab token chup-chaap guest ban jata hai.
 - Classic renderer portals nahi dikhata.
+
+## v22.1 — "websocket error" / Reconnecting… (connection troubleshooting)
+- `hooks/useSnakeNetwork.ts`: connect error ab URL aur fix batata hai ("Can't reach the game server at … is it running?") — sirf "websocket error" nahi.
+- `server/index.ts`: ab `.env.local` / `.env` khud load karta hai (tsx ye files nahi padhta); start par `/health` URL print karta hai.
+- Sabse common wajah: game server (`npm run server:dev`) chal hi nahi raha — `npm run dev` sirf Next.js hai.

@@ -7,7 +7,10 @@
 //   PORT                        default 4000
 //   CORS_ORIGINS                comma separated allow-list, default covers Next dev + Capacitor (see below)
 //   FIREBASE_SERVICE_ACCOUNT_JSON  service-account JSON (one line) — enables Firebase ID-token
-//                                verification. Without it connections are accepted but UNVERIFIED.
+//                                verification AND server-side ranked settling. Without it connections are
+//                                accepted but UNVERIFIED and ranked rooms are refused (RANKED_UNAVAILABLE).
+//   FIREBASE_DATABASE_URL       Realtime Database URL (e.g. https://<project>-default-rtdb.firebaseio.com).
+//                                Required for ranked: the server writes ranked/{uid} with the Admin SDK.
 //
 // This must run as its OWN long-lived Node process (Railway, Fly.io, Render, a VPS …).
 // It cannot live inside Next.js: the app is exported statically (webDir: "out") and serverless
@@ -25,8 +28,19 @@ import {
   type ServerToClientEvents,
 } from "../shared/snake-protocol"
 import { RoomManager, type Transport } from "./rooms"
+import { AdminRankedStore, type AdminDbLike, type RankedStore } from "./ranked-store"
 
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents>
+
+// tsx does NOT read .env files (only Next.js does, and only for the browser side). Load them here so
+// PORT / CORS_ORIGINS / FIREBASE_SERVICE_ACCOUNT_JSON in .env.local work. Existing variables are never overwritten.
+for (const file of [".env.local", ".env"]) {
+  try {
+    ;(process as unknown as { loadEnvFile?: (path: string) => void }).loadEnvFile?.(file) // Node >= 20.12
+  } catch {
+    /* file does not exist: fine */
+  }
+}
 
 const PORT = Number(process.env.PORT ?? 4000)
 const DEFAULT_ORIGINS = [
@@ -47,7 +61,13 @@ const ORIGINS = (process.env.CORS_ORIGINS ?? DEFAULT_ORIGINS.join(","))
 const httpServer = createServer((req, res) => {
   if (req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" })
-    res.end(JSON.stringify({ ok: true, protocol: PROTOCOL_VERSION, uptimeSec: Math.round(process.uptime()), ...manager.stats() }))
+    res.end(JSON.stringify({
+        ok: true,
+        protocol: PROTOCOL_VERSION,
+        uptimeSec: Math.round(process.uptime()),
+        ranked: manager?.rankedAvailable ?? false,
+        ...(manager?.stats() ?? { rooms: 0, players: 0, playing: 0 }),
+      }))
     return
   }
   res.writeHead(404).end()
@@ -61,28 +81,31 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   transports: ["websocket", "polling"],
 })
 
-// ---------------------------------------------------------------------------
-// Optional Firebase ID-token verification. Set FIREBASE_SERVICE_ACCOUNT_JSON
-// (the service-account JSON, one line) to turn it on. Without it every
-// connection is accepted but marked unverified (uid = null) — fine for casual
-// play, NOT for ranked: the client settles ranked through the Firebase SDK,
-// whose security rules still bind writes to auth.uid.
+// Firebase Admin: ID-token verification (handshake) + the ranked store (Realtime Database writes).
+// Set FIREBASE_SERVICE_ACCOUNT_JSON (one line) and FIREBASE_DATABASE_URL. Without the JSON every connection is
+// accepted but marked unverified (uid = null): fine for casual play, ranked rooms are refused. Without the
+// database URL players are still verified, but ranked is unavailable (nothing could be saved).
 // ---------------------------------------------------------------------------
 
 type VerifyFn = (token: string) => Promise<string | null>
 let verifyIdToken: VerifyFn | null = null
+let rankedStore: RankedStore | null = null
 
 async function initAuth(): Promise<void> {
   const sa = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
   if (!sa) {
-    console.warn("[auth] FIREBASE_SERVICE_ACCOUNT_JSON not set — connections will be UNVERIFIED (no ranked)")
+    console.warn("[auth] FIREBASE_SERVICE_ACCOUNT_JSON not set — connections will be UNVERIFIED, ranked is OFF")
     return
   }
   try {
     const admin = await import("firebase-admin")
     const cred = JSON.parse(sa) as { projectId?: string; clientEmail?: string; privateKey?: string }
+    const databaseURL = process.env.FIREBASE_DATABASE_URL?.trim() || undefined
     if (!admin.apps.length) {
-      admin.initializeApp({ credential: admin.credential.cert(cred as Parameters<typeof admin.credential.cert>[0]) })
+      admin.initializeApp({
+        credential: admin.credential.cert(cred as Parameters<typeof admin.credential.cert>[0]),
+        ...(databaseURL ? { databaseURL } : {}),
+      })
     }
     verifyIdToken = async (token: string) => {
       try {
@@ -93,8 +116,16 @@ async function initAuth(): Promise<void> {
       }
     }
     console.log("[auth] Firebase ID-token verification ON")
+    if (databaseURL) {
+      rankedStore = new AdminRankedStore(admin.database() as unknown as AdminDbLike, admin.database.ServerValue.TIMESTAMP)
+      console.log("[ranked] server-side ranked settling ON (Admin SDK -> ranked/{uid})")
+    } else {
+      console.warn("[ranked] FIREBASE_DATABASE_URL not set — ranked rooms are OFF")
+    }
   } catch (err) {
-    console.error("[auth] failed to init firebase-admin — connections will be UNVERIFIED:", (err as Error).message)
+    console.error("[auth] failed to init firebase-admin — connections will be UNVERIFIED, ranked is OFF:", (err as Error).message)
+    verifyIdToken = null
+    rankedStore = null
   }
 }
 
@@ -104,9 +135,11 @@ io.use(async (socket, next) => {
     const uid = await verifyIdToken(token)
     socket.data.uid = uid
     socket.data.verified = uid !== null
+    socket.data.badToken = uid === null
   } else {
     socket.data.uid = null
     socket.data.verified = false
+    socket.data.badToken = typeof token === "string" && token.length > 0 // a token was sent but cannot be checked
   }
   next()
 })
@@ -127,7 +160,7 @@ const transport: Transport = {
   joinChannel: (socketId, code) => void io.sockets.sockets.get(socketId)?.join(code),
   leaveChannel: (socketId, code) => void io.sockets.sockets.get(socketId)?.leave(code),
 }
-const manager = new RoomManager(transport)
+let manager: RoomManager // created once Firebase Admin is initialised (see start())
 
 // ---------------------------------------------------------------------------
 // Per-socket rate limiting (token bucket). Direction inputs get a generous bucket, everything else a small one.
@@ -158,6 +191,9 @@ const reply = (ack: unknown, result: unknown): void => {
 const failure = (code: NetErrorCode, message: string): AckResult<never> => ({ ok: false, code, message })
 
 io.on("connection", (socket: GameSocket) => {
+  if (socket.data.badToken) {
+    socket.emit("NET_NOTICE", { code: "BAD_TOKEN", message: "Your sign-in could not be verified — playing as guest (no ranked)" })
+  }
   const control = new Bucket(10, 5) // lobby / room requests
   const moves = new Bucket(40, 30) // MOVE_INPUT
   let violations = 0
@@ -190,6 +226,7 @@ io.on("connection", (socket: GameSocket) => {
   socket.on("UPDATE_SETTINGS", (p, ack) => handle(ack, () => manager.updateSettings(socket.id, p, Date.now())))
   socket.on("START_GAME", (ack) => handle(ack, () => manager.startGame(socket.id, Date.now())))
   socket.on("RESET_ROOM", (ack) => handle(ack, () => manager.resetRoom(socket.id, Date.now())))
+  socket.on("FORFEIT_MATCH", (ack) => handle(ack, () => manager.forfeitMatch(socket.id, Date.now())))
 
   socket.on("MOVE_INPUT", (p) => {
     if (!moves.take()) {
@@ -231,12 +268,18 @@ const loop = (): void => {
   setTimeout(loop, Math.max(0, nextTickAt - Date.now()))
 }
 
-httpServer.listen(PORT, () => {
-  console.log(`[snake] Socket.io server on :${PORT}  (protocol v${PROTOCOL_VERSION}, ${NET.TICK_RATE} TPS)`)
-  console.log(`[snake] allowed origins: ${ORIGINS.join(", ")}`)
-  void initAuth()
-  loop()
-})
+async function start(): Promise<void> {
+  // Auth + ranked store are ready BEFORE the first connection is accepted, so no handshake is ever mis-verified.
+  await initAuth()
+  manager = new RoomManager(transport, { rankedStore })
+  httpServer.listen(PORT, () => {
+    console.log(`[snake] Socket.io server on :${PORT}  (protocol v${PROTOCOL_VERSION}, ${NET.TICK_RATE} TPS)`)
+    console.log(`[snake] health check: http://localhost:${PORT}/health`)
+    console.log(`[snake] allowed origins: ${ORIGINS.join(", ")}`)
+    loop()
+  })
+}
+void start()
 
 const shutdown = (): void => {
   console.log("[snake] shutting down")

@@ -4,7 +4,9 @@ import assert from "node:assert"
 import { GameEngine } from "../server/engine"
 import { RoomManager, type Transport } from "../server/rooms"
 import { applyGameSync, createGameView, type GameView } from "../shared/sync-reducer"
-import { NET, type Dir, type GameStateSync, type PlayerDiedEvent, type S2CEvent } from "../shared/snake-protocol"
+import { MemoryRankedStore } from "../server/ranked-store"
+import type { GameOverPayload, RankedResultPayload } from "../shared/snake-protocol"
+import { DEFAULT_ROOM_SETTINGS, NET, type Dir, type GameStateSync, type PlayerDiedEvent, type S2CEvent } from "../shared/snake-protocol"
 
 const T = NET.TICK_MS
 const DIRS: Dir[] = ["UP", "DOWN", "LEFT", "RIGHT"]
@@ -16,7 +18,7 @@ const rnd = () => ((seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967
 function mkEngine(n: number, o: Partial<ConstructorParameters<typeof GameEngine>[0]> = {}) {
   return new GameEngine({
     mode: "classic",
-    settings: { map: "classic", teleport: false, avoidCollision: false },
+    settings: { ...DEFAULT_ROOM_SETTINGS, map: "classic", teleport: false, avoidCollision: false },
     players: Array.from({ length: n }, (_, i) => ({ id: "p" + i, name: "P" + i })),
     startAt: 1000,
     seed: 7,
@@ -89,7 +91,7 @@ const head = (e: GameEngine, id: string) => snake(e, id).seg[0]
 
 // teleport: wrap instead of dying
 {
-  const e = mkEngine(2, { settings: { map: "classic", teleport: true, avoidCollision: false } })
+  const e = mkEngine(2, { settings: { ...DEFAULT_ROOM_SETTINGS, map: "classic", teleport: true, avoidCollision: false } })
   const { died } = run(e, 1000, 120)
   assert(!died.some((d) => d.cause === "wall"), "no wall deaths with teleport")
 }
@@ -248,7 +250,7 @@ for (let round = 0; round < 40; round++) {
 // 3. Room manager (fake transport)
 // ============================================================================
 interface Sent { to: string; event: S2CEvent; payload: unknown }
-function makeWorld() {
+function makeWorld(store?: MemoryRankedStore) {
   const sent: Sent[] = []
   const channels = new Map<string, Set<string>>() // code -> socket ids
   const transport: Transport = {
@@ -257,7 +259,7 @@ function makeWorld() {
     joinChannel: (id, code) => void (channels.get(code) ?? channels.set(code, new Set()).get(code)!).add(id),
     leaveChannel: (id, code) => void channels.get(code)?.delete(id),
   }
-  return { sent, mgr: new RoomManager(transport), channels }
+  return { sent, mgr: new RoomManager(transport, { rankedStore: store ?? null, log: () => {}, rng: rnd }), channels }
 }
 const lastRoom = (w: ReturnType<typeof makeWorld>, sock: string) =>
   [...w.sent].reverse().find((s) => s.to === sock && s.event === "ROOM_UPDATE")!.payload as import("../shared/snake-protocol").RoomSnapshot
@@ -265,7 +267,7 @@ const lastRoom = (w: ReturnType<typeof makeWorld>, sock: string) =>
 {
   const w = makeWorld()
   let now = 10_000
-  const a = w.mgr.createRoom("sA", { name: "  Alice<script> ", color: "#ff5d7a" }, now, "uid-alice")
+  const a = w.mgr.createRoom("sA", { name: "  Alice<script> ", color: "#ff5d7a", settings: { bots: false } }, now, "uid-alice")
   assert(a.ok)
   if (!a.ok) throw 0
   assert.strictEqual(a.room.players[0].name, "Alicescript") // < > stripped
@@ -357,7 +359,7 @@ const lastRoom = (w: ReturnType<typeof makeWorld>, sock: string) =>
 {
   const w = makeWorld()
   let now = 50_000
-  const h = w.mgr.createRoom("h", { name: "Host" }, now)
+  const h = w.mgr.createRoom("h", { name: "Host", settings: { bots: false } }, now)
   if (!h.ok) throw 0
   for (let i = 0; i < 7; i++) assert(w.mgr.joinRoom("j" + i, { code: h.code, name: "J" + i }, now + i).ok)
   const full = w.mgr.joinRoom("late", { code: h.code, name: "Late" }, now)
@@ -368,7 +370,7 @@ const lastRoom = (w: ReturnType<typeof makeWorld>, sock: string) =>
 
   // quick match fills the fullest public lobby of the mode
   const w2 = makeWorld()
-  const q1 = w2.mgr.quickMatch("q1", { name: "Q1", mode: "classic" }, now)
+  const q1 = w2.mgr.quickMatch("q1", { name: "Q1", mode: "classic", bots: false }, now)
   const q2 = w2.mgr.quickMatch("q2", { name: "Q2", mode: "classic" }, now)
   const r1 = w2.mgr.quickMatch("q3", { name: "R1", mode: "royale" }, now)
   if (!q1.ok || !q2.ok || !r1.ok) throw 0
@@ -380,14 +382,15 @@ const lastRoom = (w: ReturnType<typeof makeWorld>, sock: string) =>
   now += NET.PUBLIC_AUTOSTART_MS
   w2.mgr.tick(now)
   assert.strictEqual(w2.mgr.getRoom(q1.code)!.status, "countdown")
-  assert.strictEqual(w2.mgr.getRoom(r1.code)!.status, "lobby", "1 royale player never auto-starts")
+  assert.strictEqual(w2.mgr.getRoom(r1.code)!.status, "countdown", "a lone royale player starts too: bots fill the room")
+  assert.strictEqual(w2.mgr.getRoom(r1.code)!.bots.length, 7, "royale is topped up to 8 seats")
 }
 
 // lobby disconnect: slot is freed after the grace period, empty room is deleted
 {
   const w = makeWorld()
   let now = 1
-  const c = w.mgr.createRoom("a", { name: "A" }, now)
+  const c = w.mgr.createRoom("a", { name: "A", settings: { bots: false } }, now)
   if (!c.ok) throw 0
   w.mgr.onDisconnect("a", now)
   now += NET.RECONNECT_GRACE_MS
@@ -400,7 +403,7 @@ const lastRoom = (w: ReturnType<typeof makeWorld>, sock: string) =>
 {
   const w = makeWorld()
   let now = 1_000
-  const host = w.mgr.createRoom("s0", { name: "H" }, now)
+  const host = w.mgr.createRoom("s0", { name: "H", settings: { bots: false } }, now)
   if (!host.ok) throw 0
   for (let i = 1; i < 8; i++) {
     w.mgr.joinRoom("s" + i, { code: host.code, name: "P" + i }, now)
@@ -421,4 +424,199 @@ const lastRoom = (w: ReturnType<typeof makeWorld>, sock: string) =>
   assert(deaths >= 7, "at least 7 deaths before one winner remains")
 }
 
-console.log("NET: ALL TESTS PASSED")
+// ============================================================================
+// 4. v23: ranked settling, room-level ranked, bots
+// ============================================================================
+const flush = () => new Promise<void>((r) => setTimeout(r, 5))
+const rankedPayload = (w: ReturnType<typeof makeWorld>, sock: string) =>
+  [...w.sent].reverse().find((s) => s.to === sock && s.event === "RANKED_RESULT")?.payload as RankedResultPayload | undefined
+
+async function rankedMatch(opts: { leaver?: boolean; unverified?: boolean } = {}) {
+  const store = new MemoryRankedStore()
+  const w = makeWorld(store)
+  let now = 100_000
+  const mk = (sock: string, name: string, uid: string | null) =>
+    sock === "r1"
+      ? w.mgr.createRoom(sock, { name, settings: { ranked: true, bots: true } }, now, uid)
+      : w.mgr.joinRoom(sock, { code, name, expectRanked: true }, now, uid)
+  let code = ""
+  const h = mk("r1", "A", "uA")
+  if (!h.ok) throw new Error("create failed " + h.message)
+  code = h.code
+  assert.strictEqual(h.room.settings.ranked, true)
+  assert.strictEqual(h.room.settings.bots, false, "ranked rooms never have bots")
+  assert.strictEqual(h.room.settings.mode, "classic")
+  const j2 = mk("r2", "B", "uB")
+  const j3 = mk("r3", "C", opts.unverified ? null : "uC")
+  return { store, w, code, now, h, j2, j3 }
+}
+
+async function runRanked() {
+  // --- creation / join gates -------------------------------------------------
+  {
+    const w = makeWorld() // server WITHOUT a ranked store
+    const r = w.mgr.createRoom("x", { name: "X", settings: { ranked: true } }, 1, "u")
+    assert(!r.ok && r.code === "RANKED_UNAVAILABLE")
+    const c = w.mgr.createRoom("x", { name: "X", settings: { ranked: false } }, 1, null)
+    assert(c.ok, "casual still works without a ranked store")
+  }
+  {
+    const w = makeWorld(new MemoryRankedStore())
+    const g = w.mgr.createRoom("g", { name: "G", settings: { ranked: true } }, 1, null)
+    assert(!g.ok && g.code === "NOT_VERIFIED", "unverified cannot create a ranked room")
+    const casual = w.mgr.createRoom("c", { name: "C" }, 1, "uC")
+    const rk = w.mgr.createRoom("k", { name: "K", settings: { ranked: true } }, 1, "uK")
+    if (!casual.ok || !rk.ok) throw 0
+    // the flag is frozen after creation, and cannot be toggled by the host
+    assert(w.mgr.updateSettings("c", { ranked: true }, 2).ok)
+    assert.strictEqual(w.mgr.getRoom(casual.code)!.settings.ranked, false, "casual room cannot become ranked")
+    assert(w.mgr.updateSettings("k", { ranked: false, bots: true, mode: "royale" }, 2).ok)
+    const s = w.mgr.getRoom(rk.code)!.settings
+    assert(s.ranked && !s.bots && s.mode === "classic", "ranked room cannot become casual / get bots / change mode")
+    // joining
+    const n = w.mgr.joinRoom("g2", { code: rk.code, name: "Guest" }, 3, null)
+    assert(!n.ok && n.code === "NOT_VERIFIED", "guest cannot join ranked")
+    const dup = w.mgr.joinRoom("k2", { code: rk.code, name: "K again" }, 3, "uK")
+    assert(!dup.ok && dup.code === "RANKED_RULES", "one seat per account")
+    const wrongTab = w.mgr.joinRoom("t", { code: casual.code, name: "T", expectRanked: true }, 3, "uT")
+    assert(!wrongTab.ok && wrongTab.code === "NOT_RANKED", "Ranked tab refuses a casual room")
+    // ranked quick match never lands in a casual room
+    const q = w.mgr.quickMatch("q", { name: "Q", ranked: true }, 4, "uQ")
+    assert(q.ok && q.code !== casual.code && q.room.settings.ranked)
+    const qg = w.mgr.quickMatch("qg", { name: "QG", ranked: true }, 4, null)
+    assert(!qg.ok && qg.code === "NOT_VERIFIED")
+  }
+
+  // --- min players message --------------------------------------------------
+  {
+    const { w, h, now } = await rankedMatch()
+    // only A, B, C are in (3); drop C to leave 2
+    w.mgr.leave("r3", now)
+    const e = w.mgr.startGame("r1", now)
+    assert(!e.ok && e.code === "NOT_ENOUGH_PLAYERS" && e.message === "Ranked needs 3+ players")
+    assert(h.ok)
+  }
+  // --- unverified player in a ranked room: refused at join ------------------
+  {
+    const { j3 } = await rankedMatch({ unverified: true })
+    assert(!j3.ok && j3.code === "NOT_VERIFIED")
+  }
+
+  // --- full match: B leaves (last), settled server-side, zero-sum ----------
+  {
+    const { store, w, code, h, j2, j3 } = await rankedMatch()
+    let now = 200_000
+    if (!h.ok || !j2.ok || !j3.ok) throw 0
+    // ratings BEFORE the match: A strong, B average (no record), C weak
+    store.data.set("uA", { elo: 1500, rp: 1500, mmr: 1300, gamesPlayed: 40, lastActiveAt: now, wins: 20, losses: 20, matches: 40 })
+    store.data.set("uC", { elo: 800, rp: 800, mmr: 900, gamesPlayed: 10, lastActiveAt: now, wins: 2, losses: 8, matches: 10 })
+    assert(w.mgr.setReady("r2", { ready: true }, now).ok && w.mgr.setReady("r3", { ready: true }, now).ok)
+    assert(w.mgr.startGame("r1", now).ok)
+    assert.strictEqual(w.mgr.getRoom(code)!.bots.length, 0, "no bots in ranked")
+    await flush() // ratings snapshot is read at the countdown
+    // someone tampers with the stored rating DURING the match: must not influence the result
+    store.data.set("uA", { elo: 3000, rp: 3000, mmr: 3000, gamesPlayed: 99, lastActiveAt: now, wins: 99, losses: 0, matches: 99 })
+    now += NET.COUNTDOWN_MS
+    w.mgr.tick(now)
+    // B and C leave for good -> A is last alive; leavers settle LAST
+    w.mgr.onDisconnect("r2", now)
+    w.mgr.onDisconnect("r3", now)
+    for (let i = 0; i < NET.RECONNECT_GRACE_MS / T + 10 && w.mgr.getRoom(code)!.status !== "ended"; i++) {
+      now += T
+      w.mgr.tick(now)
+    }
+    assert.strictEqual(w.mgr.getRoom(code)!.status, "ended")
+    await flush()
+    const res = rankedPayload(w, "r1")
+    assert(res && res.saved, "RANKED_RESULT delivered and saved: " + JSON.stringify(res))
+    assert.strictEqual(res!.rows.length, 3)
+    const rowA = res!.rows.find((r) => r.uid === "uA")!
+    const rowB = res!.rows.find((r) => r.uid === "uB")!
+    const rowC = res!.rows.find((r) => r.uid === "uC")!
+    assert.strictEqual(rowA.placement, 1)
+    assert(rowB.leaver && rowC.leaver, "leavers flagged")
+    assert(rowB.placement >= 2 && rowC.placement >= 2, "leavers are behind the winner")
+    assert.strictEqual(rowA.rpBefore, 1500, "result uses the snapshot taken at match start, not the later tampered value")
+    assert.strictEqual(rowA.rpDelta + rowB.rpDelta + rowC.rpDelta, 0, "RP is zero-sum even with leavers")
+    assert.strictEqual(rowA.mmrDelta + rowB.mmrDelta + rowC.mmrDelta, 0, "MMR is zero-sum even with leavers")
+    // the DB holds the new values for EVERY player, including those who left
+    assert.strictEqual(store.writes.length, 1, "one atomic write")
+    assert.strictEqual(store.data.get("uB")!.gamesPlayed, 1)
+    assert.strictEqual(store.data.get("uC")!.rp, rowC.rpAfter)
+    assert.strictEqual(store.data.get("uA")!.rp, rowA.rpAfter)
+    assert.strictEqual(store.data.get("uA")!.wins, 21)
+    // a late reconnect gets the result again
+  }
+
+  // --- write failure: honest message, nothing claimed ------------------------
+  {
+    const { store, w, code, h, j2, j3 } = await rankedMatch()
+    let now = 300_000
+    if (!h.ok || !j2.ok || !j3.ok) throw 0
+    w.mgr.setReady("r2", { ready: true }, now)
+    w.mgr.setReady("r3", { ready: true }, now)
+    w.mgr.startGame("r1", now)
+    await flush()
+    store.failWrites = true
+    now += NET.COUNTDOWN_MS
+    w.mgr.tick(now)
+    w.mgr.onDisconnect("r2", now)
+    w.mgr.onDisconnect("r3", now)
+    for (let i = 0; i < NET.RECONNECT_GRACE_MS / T + 10; i++) {
+      now += T
+      w.mgr.tick(now)
+    }
+    await flush()
+    const res = rankedPayload(w, "r1")
+    assert(res && !res.saved && res.note, "failed save is reported")
+    assert.strictEqual(store.data.size, 0)
+  }
+}
+
+function runBots() {
+  // bots fill a casual room, are tagged, ranked rooms reject them
+  const w = makeWorld()
+  let now = 500_000
+  const r = w.mgr.createRoom("b1", { name: "Solo", settings: { bots: true, botLevel: "hard", mode: "classic" } }, now)
+  if (!r.ok) throw 0
+  assert.strictEqual(r.room.settings.botLevel, "hard")
+  const started = w.mgr.startGame("b1", now)
+  assert(started.ok, "one human may start a casual room when bots fill it")
+  const room = lastRoom(w, "b1")
+  const bots = room.players.filter((p) => p.bot)
+  assert.strictEqual(room.players.length, 4, "classic is topped up to 4")
+  assert.strictEqual(bots.length, 3)
+  assert(bots.every((b) => b.botLevel === "hard" && !b.uid && b.id.startsWith("bot_")))
+  assert.strictEqual(new Set(room.players.map((p) => p.name)).size, 4, "unique names")
+  // bots really move on the server and are tagged in standings
+  now += NET.COUNTDOWN_MS
+  w.mgr.tick(now)
+  const eng = w.mgr.getRoom(r.code)!.engine!
+  const before = JSON.stringify([...eng.inspect().snakes.values()].map((s) => s.seg[0]))
+  for (let i = 0; i < 60; i++) {
+    now += T
+    w.mgr.tick(now)
+  }
+  const after = JSON.stringify([...eng.inspect().snakes.values()].map((s) => s.seg[0]))
+  assert.notStrictEqual(before, after, "bots and human move")
+  // bots off: 2 humans minimum again
+  const w2 = makeWorld()
+  const o = w2.mgr.createRoom("n1", { name: "N", settings: { bots: false } }, 1)
+  if (!o.ok) throw 0
+  const e = w2.mgr.startGame("n1", 1)
+  assert(!e.ok && e.code === "NOT_ENOUGH_PLAYERS")
+  // bots are never rated: casual match end produces no RANKED_RESULT / writes
+  assert(!w.sent.some((s) => s.event === "RANKED_RESULT"))
+  // forfeit keeps the player in the room
+  assert(w.mgr.forfeitMatch("b1", now).ok)
+  assert(lastRoom(w, "b1").players.some((p) => !p.bot))
+}
+
+runBots()
+void runRanked().then(
+  () => console.log("NET: ALL TESTS PASSED"),
+  (err) => {
+    console.error(err)
+    process.exit(1)
+  },
+)
