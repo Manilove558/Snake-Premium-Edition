@@ -26,6 +26,8 @@ import BattleRouter from "./battle-router" // picks classic MultiplayerBattle or
 import { RankPopup, MapPopup, SettingsPopup } from "./home-popups"
 import SmoothSnakeLayer from "./smooth-snake-layer"
 import { loadSmoothMove, saveSmoothMove } from "@/lib/smooth-move"
+import { loadThemeTrack, saveThemeTrack, loadThemeVolume, saveThemeVolume, loadThemeOn, saveThemeOn, THEME_TRACK_DEFAULT, THEME_VOLUME_DEFAULT } from "@/lib/theme-music"
+import { useThemeMusic } from "@/hooks/use-theme-music"
 import { RotateHint } from "./rotate-hint"
 import { PanelHostContext, type ViewId } from "./panel-host"
 import { useBackButton } from "@/hooks/use-back-button"
@@ -659,6 +661,24 @@ function SnakeGameInner() {
   useEffect(() => { setClickVolume(loadClickVolume()); setClickVolumeLoaded(true) }, [])
   useEffect(() => { if (clickVolumeLoaded) saveClickVolume(clickVolume) }, [clickVolume, clickVolumeLoaded])
   useClickSound({ enabled: clickSound, volume: clickVolume })
+  // Theme song (background music): chosen song, on/off switch + its OWN volume (Settings row, like Click sound), saved on this device.
+  // Follows the mute icon, plays on every menu screen and is silent while a match is being played (see musicPaused below).
+  const [themeTrack, setThemeTrack] = useState(THEME_TRACK_DEFAULT)
+  const [themeOn, setThemeOn] = useState(true)
+  const [themeVolume, setThemeVolume] = useState(THEME_VOLUME_DEFAULT)
+  const [themeLoaded, setThemeLoaded] = useState(false)
+  useEffect(() => { setThemeTrack(loadThemeTrack()); setThemeOn(loadThemeOn()); setThemeVolume(loadThemeVolume()); setThemeLoaded(true) }, [])
+  useEffect(() => { if (themeLoaded) { saveThemeTrack(themeTrack); saveThemeOn(themeOn); saveThemeVolume(themeVolume) } }, [themeTrack, themeOn, themeVolume, themeLoaded])
+  // No theme song from the moment a match starts (Start pressed -> countdown -> playing, solo or multiplayer) until the player is out
+  // of it. When the match ends the music comes back after 2.5 s, so it doesn't talk over the Game Over jingle.
+  const inAnyMatch = (gameStarted && !gameOver) || countdown > 0 || mpView === "battle"
+  const [musicPaused, setMusicPaused] = useState(false)
+  useEffect(() => {
+    if (inAnyMatch) { setMusicPaused(true); return }
+    const t = setTimeout(() => setMusicPaused(false), 2500)
+    return () => clearTimeout(t)
+  }, [inAnyMatch])
+  useThemeMusic({ trackId: themeLoaded ? themeTrack : "", enabled: soundEnabled && themeOn && !musicPaused, volume: themeVolume })
   // D-pad button tick sound uses the same switch + click volume (mute icon does not affect it)
   useEffect(() => setButtonSoundConfig(clickSound, clickVolume), [clickSound, clickVolume])
   // Short vibration on every button press (follows the Settings "Vibration" switch)
@@ -2357,6 +2377,12 @@ function SnakeGameInner() {
           setClickVolume={setClickVolume}
           notchSafe={notchSafe}
           setNotchSafe={(v) => { triggerHaptic(15); setNotchSafe(v) }}
+          themeTrack={themeTrack}
+          setThemeTrack={setThemeTrack}
+          themeOn={themeOn}
+          setThemeOn={setThemeOn}
+          themeVolume={themeVolume}
+          setThemeVolume={setThemeVolume}
           onClose={() => setActiveView("GAME")}
         />
       )}

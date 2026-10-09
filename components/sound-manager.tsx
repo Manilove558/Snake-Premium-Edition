@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useEffect, useCallback } from "react"
-import { playSfx, preloadSfx, playCountdownTick, playElimination, playZoneWarning, playZoneShrink } from "@/lib/sfx"
+import { playSfx, preloadSfx, startLoop, type LoopHandle, playCountdownTick, playElimination, playZoneWarning, playZoneShrink } from "@/lib/sfx"
 
 interface SoundManagerProps {
   enabled?: boolean
@@ -23,7 +23,7 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
       gameOverSoundRef.current = new Audio("/sounds/game-over.mp3")
       gameStartSoundRef.current = new Audio("/sounds/game-start.mp3")
       // short, frequent cues are decoded once and played through Web Audio (instant, no per-play allocation)
-      preloadSfx(["walk-a", "walk-b", "walk-c", "food"])
+      preloadSfx(["snake-walk.mp3", "food"])
     }
 
     // Cleanup
@@ -43,20 +43,27 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
     [],
   )
 
-  // Snake step: soft scale-rustle "slither". Three variants cycle (never the same one twice in a row) + a touch of random pitch, throttled to 60 ms.
-  const lastStepRef = useRef({ t: 0, i: 0 })
+  // Snake walk: the "snake-walk.mp3" slither plays as a gapless LOOP while the snake is moving. Every step calls
+  // playWalkSound(); if no step arrives for 300 ms (paused, crashed, game over) the loop fades out.
   // `scale` (0..1) lets a spectator hear OTHER snakes more quietly than their own snake.
+  const walkRef = useRef<{ h: LoopHandle | null; timer: ReturnType<typeof setTimeout> | null }>({ h: null, timer: null })
+  const stopWalk = useCallback(() => {
+    const w = walkRef.current
+    if (w.timer) { clearTimeout(w.timer); w.timer = null }
+    if (w.h) { w.h.stop(); w.h = null }
+  }, [])
   const playWalkSound = useCallback((scale = 1) => {
     const s = typeof scale === "number" ? scale : 1
     const v = volumeRef.current
-    if (!enabledRef.current || v <= 0) return
-    const now = performance.now()
-    if (now - lastStepRef.current.t < 60) return
-    lastStepRef.current.t = now
-    lastStepRef.current.i = (lastStepRef.current.i + 1 + Math.floor(Math.random() * 2)) % 3
-    const name = ["walk-a", "walk-b", "walk-c"][lastStepRef.current.i]
-    playSfx(name, { gain: v * 0.9 * s, rate: 0.95 + Math.random() * 0.1 })
-  }, [])
+    if (!enabledRef.current || v <= 0) { stopWalk(); return }
+    const w = walkRef.current
+    const gain = v * 0.8 * s
+    if (!w.h) w.h = startLoop("snake-walk.mp3", gain)
+    else w.h.setGain(gain)
+    if (w.timer) clearTimeout(w.timer)
+    w.timer = setTimeout(stopWalk, 300)
+  }, [stopWalk])
+  useEffect(() => stopWalk, [stopWalk]) // leaving the screen silences it
 
   // Countdown 3 / 2 / 1 tick (rising notes), follows the master volume + mute
   const playCountdownSound = useCallback((n: number) => {
@@ -95,12 +102,13 @@ export function useSoundManager({ enabled = true, volume = 1 }: SoundManagerProp
   }, [])
 
   const playGameOverSound = useCallback(() => {
+    stopWalk()
     const el = withVolume(enabledRef.current ? gameOverSoundRef.current : null)
     if (el) {
       el.currentTime = 0
       el.play().catch((err) => console.error("Error playing game over sound:", err))
     }
-  }, [withVolume])
+  }, [withVolume, stopWalk])
 
   const playGameStartSound = useCallback(() => {
     const el = withVolume(enabledRef.current ? gameStartSoundRef.current : null)

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useBackButton } from "@/hooks/use-back-button"
 import { createPortal } from "react-dom"
-import { X, Volume2, VolumeX, Trophy, Globe, Users, Moon, Sun, Gamepad2, Move, Vibrate, VibrateOff, Smartphone, ChevronLeft, ChevronRight } from "lucide-react"
+import { X, Volume2, VolumeX, Trophy, Globe, Users, Moon, Sun, Gamepad2, Move, Vibrate, VibrateOff, Smartphone, ChevronLeft, ChevronRight, Music, Check } from "lucide-react"
 import { fetchLeaderboard, type LeaderboardRow } from "@/lib/ranked-db"
 import { getTier } from "@/lib/ranked"
 import { openPlayerProfile, useFriends } from "@/lib/friends"
@@ -10,6 +10,7 @@ import { useAuthUser } from "@/lib/auth"
 import { PlayerAvatar } from "./player-avatar"
 import { usePanelTarget } from "./panel-host"
 import { VipCrown } from "./vip-crown"
+import { THEME_TRACKS } from "@/lib/theme-music"
 
 const box = "rounded-2xl border border-black/5 dark:border-white/10 bg-white/70 dark:bg-white/5"
 
@@ -140,9 +141,13 @@ type SettingsProps = {
   clickVolume: number; setClickVolume: (v: number) => void
   /** Notch Display / Safe Area Cutout: ON = UI stays clear of the camera notch + rounded corners, OFF = full-screen edge-to-edge */
   notchSafe: boolean; setNotchSafe: (v: boolean) => void
+  /** Theme song (background music): selected track id (or "none") + its own volume 0..1 */
+  themeTrack: string; setThemeTrack: (id: string) => void
+  themeOn: boolean; setThemeOn: (v: boolean) => void
+  themeVolume: number; setThemeVolume: (v: number) => void
   onClose: () => void
 }
-export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume, darkMode, setDarkMode, controlMode, setControlMode, hapticEnabled, setHapticEnabled, hapticSupported, smoothMove, setSmoothMove, clickSound, setClickSound, clickVolume, setClickVolume, notchSafe, setNotchSafe, onClose }: SettingsProps) {
+export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume, darkMode, setDarkMode, controlMode, setControlMode, hapticEnabled, setHapticEnabled, hapticSupported, smoothMove, setSmoothMove, clickSound, setClickSound, clickVolume, setClickVolume, notchSafe, setNotchSafe, themeTrack, setThemeTrack, themeOn, setThemeOn, themeVolume, setThemeVolume, onClose }: SettingsProps) {
   const label = "text-[10px] tracking-[.2em] font-bold opacity-50 px-1"
   const seg = (v: "buttons" | "swipe", text: string, icon: ReactNode) => (
     <button key={v} onClick={() => setControlMode(v)} aria-pressed={controlMode === v}
@@ -163,6 +168,9 @@ export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume
             <input type="range" min={0} max={100} value={Math.round(volume * 100)} onChange={(e) => setVolume(Number(e.target.value) / 100)} aria-label="Game volume" className="flex-1 h-12 accent-emerald-500 cursor-pointer" />
             <span className="w-9 text-right text-xs tabular-nums opacity-60">{Math.round(volume * 100)}%</span>
           </div>
+          {/* Theme song */}
+          <div className={label}>THEME SONG</div>
+          <ThemeSongPicker track={themeTrack} setTrack={setThemeTrack} on={themeOn} setOn={setThemeOn} volume={themeVolume} setVolume={setThemeVolume} muted={!soundEnabled} />
         </div>
         {/* Theme + vibration */}
         <div className="flex flex-col gap-2">
@@ -191,6 +199,32 @@ export function SettingsPopup({ soundEnabled, setSoundEnabled, volume, setVolume
       <div className={label}>DISPLAY</div>
       <Row title="Notch Display / Safe Area Cutout" hint={notchSafe ? "On: the UI stays clear of the notch and rounded corners" : "Off: full screen, the UI uses the whole display"} on={notchSafe} onToggle={() => setNotchSafe(!notchSafe)} icon={<Smartphone className="h-5 w-5" />} />
     </PopupShell>
+  )
+}
+
+/** "Theme song" picker: one card per song (cover + title + artist) and, under them, a row that works exactly like the
+ *  "Click sound" row: tap = music on / off, press + swipe left / right = music volume. */
+function ThemeSongPicker({ track, setTrack, on, setOn, volume, setVolume, muted }: { track: string; setTrack: (id: string) => void; on: boolean; setOn: (v: boolean) => void; volume: number; setVolume: (v: number) => void; muted: boolean }) {
+  const card = (sel: boolean) => `d-pad-btn w-full min-h-[56px] px-2 py-1 flex items-center gap-2.5 text-left rounded-2xl border-2 transition-colors ${sel ? "border-emerald-500 bg-emerald-500/15" : `${box} border-black/10`}`
+  return (
+    <>
+      {THEME_TRACKS.map((t) => {
+        const sel = track === t.id
+        return (
+          <button key={t.id} type="button" onClick={() => { setTrack(t.id); setOn(true) }} aria-pressed={sel} className={`${card(sel)} ${sel && !on ? "opacity-60" : ""}`}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={t.cover} alt="" width={40} height={40} draggable={false} className="h-10 w-10 shrink-0 rounded-lg object-cover" style={t.pixel ? { imageRendering: "pixelated" } : undefined} />
+            <span className="min-w-0 flex-1">
+              <span className={`block truncate text-sm font-bold ${sel ? "text-emerald-600 dark:text-emerald-300" : ""}`}>{t.title}</span>
+              <span className="block truncate text-xs text-muted-foreground">{t.artist}</span>
+            </span>
+            {sel && <Check className="h-5 w-5 shrink-0 text-emerald-500" />}
+          </button>
+        )
+      })}
+      <ClickSoundRow title="Theme song" on={on} onToggle={() => setOn(!on)} volume={volume} setVolume={setVolume} preview={false} />
+      {muted && on && <div className="px-1 text-[11px] text-muted-foreground">Sound is muted above — unmute to hear the theme song.</div>}
+    </>
   )
 }
 
@@ -239,7 +273,7 @@ function SpeakerIcon({ level, muted }: { level: number; muted: boolean }) {
  *  Keyboard: Enter / Space toggles, Left / Right arrows change the volume by 5%.
  *  Motion: tap ripple, row lifts + glows while dragging, fill follows the finger 1:1 with a glowing edge, the speaker's
  *  waves grow with the level, the % badge pops, the switch knob springs. All of it is off for prefers-reduced-motion. */
-function ClickSoundRow({ on, onToggle, volume, setVolume }: { on: boolean; onToggle: () => void; volume: number; setVolume: (v: number) => void }) {
+function ClickSoundRow({ on, onToggle, volume, setVolume, title = "Click sound", preview: playPreview = true }: { on: boolean; onToggle: () => void; volume: number; setVolume: (v: number) => void; title?: string; preview?: boolean }) {
   const drag = useRef<{ x: number; vol: number; w: number; moved: boolean } | null>(null)
   const [dragging, setDragging] = useState(false)
   const [ripple, setRipple] = useState<{ id: number; x: number; y: number } | null>(null)
@@ -247,7 +281,7 @@ function ClickSoundRow({ on, onToggle, volume, setVolume }: { on: boolean; onTog
   const pct = Math.round(volume * 100)
   const clamp = (v: number) => Math.min(1, Math.max(0, Math.round(v * 100) / 100))
   const preview = (v: number) => {
-    if (v <= 0) return
+    if (!playPreview || v <= 0) return
     try { const a = new Audio("/sounds/click.mp3"); a.volume = clamp(v); a.play().catch(() => {}) } catch {}
   }
   const end = () => { drag.current = null; setDragging(false) }
@@ -255,7 +289,7 @@ function ClickSoundRow({ on, onToggle, volume, setVolume }: { on: boolean; onTog
     <div
       role="switch"
       aria-checked={on}
-      aria-label={`Click sound, volume ${pct}%`}
+      aria-label={`${title}, volume ${pct}%`}
       tabIndex={0}
       data-no-click-sound
       data-drag={dragging}
@@ -310,7 +344,7 @@ function ClickSoundRow({ on, onToggle, volume, setVolume }: { on: boolean; onTog
 
       <span className="relative min-w-0 flex-1">
         <span className="flex items-center gap-1.5 text-sm font-bold">
-          Click sound
+          {title}
           <span className={`cs-badge text-[11px] font-bold tabular-nums rounded-full px-1.5 py-px ${dragging ? "cs-badge-on" : ""}`}>{pct}%</span>
         </span>
         <span className="flex items-center gap-0.5 text-xs text-muted-foreground h-4">

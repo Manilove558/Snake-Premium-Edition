@@ -26,7 +26,7 @@ export function preloadSfx(names: string[]) {
     if (buffers.has(name) || loading.has(name)) continue
     loading.set(
       name,
-      fetch(`/sounds/${name}.wav`)
+      fetch(name.includes(".") ? `/sounds/${name}` : `/sounds/${name}.wav`)
         .then((r) => r.arrayBuffer())
         .then((data) => new Promise<AudioBuffer>((res, rej) => c.decodeAudioData(data, res, rej)))
         .then((buf) => { buffers.set(name, buf) })
@@ -210,4 +210,44 @@ export function playZoneShrink(gain = 1) {
     o.start(t0)
     o.stop(t0 + dur + 0.02)
   } catch {}
+}
+
+/**
+ * Start a gapless looping sound (e.g. the snake's slither while it moves). Returns a handle, or null if the sound
+ * hasn't finished loading yet (just try again on the next call). stop() fades it out over ~0.12 s.
+ */
+export type LoopHandle = { setGain: (g: number) => void; stop: () => void }
+export function startLoop(name: string, gain = 1): LoopHandle | null {
+  const c = getAudioContext()
+  const buf = buffers.get(name)
+  if (!c || !buf) return null
+  try {
+    const src = c.createBufferSource()
+    src.buffer = buf
+    src.loop = true
+    const g = c.createGain()
+    const t0 = c.currentTime
+    g.gain.setValueAtTime(0.0001, t0)
+    g.gain.linearRampToValueAtTime(Math.min(1, Math.max(0.0001, gain)), t0 + 0.06)
+    src.connect(g)
+    g.connect(c.destination)
+    src.start()
+    let stopped = false
+    return {
+      setGain: (v: number) => { if (!stopped) g.gain.setTargetAtTime(Math.min(1, Math.max(0.0001, v)), c.currentTime, 0.05) },
+      stop: () => {
+        if (stopped) return
+        stopped = true
+        try {
+          const t = c.currentTime
+          g.gain.cancelScheduledValues(t)
+          g.gain.setValueAtTime(Math.max(g.gain.value, 0.0001), t)
+          g.gain.linearRampToValueAtTime(0.0001, t + 0.12)
+          src.stop(t + 0.14)
+        } catch {}
+      },
+    }
+  } catch {
+    return null
+  }
 }
